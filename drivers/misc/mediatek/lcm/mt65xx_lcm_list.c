@@ -1111,6 +1111,14 @@ LCM_DRIVER *lcm_driver_list[] = {
 #if defined(ILI988IC_J0CPB_AB30_BOE)
 	&ILI988IC_J0CPB_AB30_BOE_lcm_drv,
 #endif
+
+#if defined(HX8394F_HD_DSI_VDO_TRULY)
+	&hx8394f_hd_dsi_vdo_truly_lcm_drv,
+#endif
+
+#if defined(HX8394F_SEC_HD_DSI_VDO_INX)
+	&hx8394f_sec_hd_dsi_vdo_inx_lcm_drv,
+#endif
 };
 
 unsigned char lcm_name_list[][128] = {

@@ -281,6 +281,8 @@ extern LCM_DRIVER SHM047160A_lcm_drv;
 extern LCM_DRIVER ILI988IC_S047HAB003_A00_lcm_drv;
 extern LCM_DRIVER ILI9881_HSD47_lcm_drv;
 extern LCM_DRIVER ILI988IC_J0CPB_AB30_BOE_lcm_drv;
+extern LCM_DRIVER hx8394f_hd_dsi_vdo_truly_lcm_drv;
+extern LCM_DRIVER hx8394f_sec_hd_dsi_vdo_inx_lcm_drv;
 #ifdef BUILD_LK
 extern void mdelay(unsigned long msec);
 #endif
