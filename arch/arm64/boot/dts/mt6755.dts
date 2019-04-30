@@ -30,9 +30,7 @@
 
 	/* chosen */
 	chosen: chosen {
-		bootargs = "console=tty0 console=ttyMT0,921600n1 vmalloc=496M \
-slub_max_order=0 slub_debug=OFZPU androidboot.hardware=mt6755 \
-firmware_class.path=/vendor/firmware loop.max_part=7";
+		bootargs = "console=tty0 console=ttyMT0,921600n1 root=/dev/ram initrd=0x44000000,0x4b434e loglevel=8";
 	};
 
 	/* Do not put any bus before mtk-msdc, because it should be mtk-msdc.0 for partition device node usage */
@@ -247,6 +245,13 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 		#size-cells = <2>;
 		ranges;
 
+		/* reserve 256KB at DRAM start + 70MB */
+		atf-reserved-memory@44600000 {
+			compatible = "mediatek,mt6755-atf-reserved-memory";
+			no-map;
+			reg = <0 0x44600000 0 0x40000>;
+		};
+
 		reserve-memory-ccci_md1 {
 			compatible = "mediatek,reserve-memory-ccci_md1";
 			no-map;
@@ -283,7 +288,7 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 		spm-reserve-memory {
 			compatible = "mediatek,spm-reserve-memory";
 			no-map;
-			size = <0 0x20000>; /* PCM_FIRMWARE_SIZE * DYNA_LOAD_PCM_MAX = 8K * 16 */
+			size = <0 0xe000>; /* PCM_FIRMWARE_SIZE * DYNA_LOAD_PCM_MAX = 8K * 7 */
 			alignment = <0 0x10000>;
 			alloc-ranges = <0 0x40000000 0 0x60000000>;
 		};
@@ -291,6 +296,16 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 		ram_console-reserved-memory@44400000 {
 			compatible = "mediatek,ram_console";
 			reg = <0 0x44400000 0 0x10000>;
+		};
+
+		preloader-reserved-memory@44800000 {
+			compatible = "mediatek,preloader";
+			reg = <0 0x44800000 0 0x100000>;
+		};
+
+		lk-reserved-memory@46000000 {
+			compatible = "mediatek,lk";
+			reg = <0 0x46000000 0 0x400000>;
 		};
 
 		minirdump-reserved-memory@444f0000 {
@@ -629,6 +644,21 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 			reg = <0x10010000 0x1000>;
 			interrupts = <GIC_SPI 164 IRQ_TYPE_EDGE_FALLING>;
 		};
+
+                cei_camera_capture: cei_camera_capture {
+			compatible = "mediatek,CEI_CAMERA_CAPTURE-eint";
+			interrupt-parent = <&eintc>;
+                        interrupts = <62 IRQ_TYPE_LEVEL_LOW>;
+                        debounce = <62 0>;
+
+		};
+
+                cei_camera_focus: cei_camera_focus {
+                        compatible = "mediatek,CEI_CAMERA_FOCUS-eint";
+                        interrupt-parent = <&eintc>;
+                        interrupts = <79 IRQ_TYPE_LEVEL_LOW>;
+                        debounce = <79 0>;
+       };
 
 		topmisc@10011000 {
 			compatible = "mediatek,topmisc";
@@ -2155,10 +2185,10 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 
 		nfc:nfcC@0 {
 			compatible = "mediatek,nfc-gpio-v2";
-			gpio-ven = <26>;
+			gpio-ven = <28>;
 			gpio-rst = <25>;
 			gpio-eint = <27>;
-			gpio-irq = <28>;
+			gpio-irq = <26>;
 		};
 
 		gps {
@@ -2191,10 +2221,10 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 
 			/* Battery Temperature Protection */
 			mtk_temperature_recharge_support = <1 >;
-			max_charge_temperature = <50 >;
-			max_charge_temperature_minus_x_degree = <47 >;
-			min_charge_temperature = <0 >;
-			min_charge_temperature_plus_x_degree = <6 >;
+			max_charge_temperature = <57 >; /* CEI comment: ORG:50 */
+			max_charge_temperature_minus_x_degree = <54 >; /* CEI comment: ORG:47 */
+			min_charge_temperature = <3 >; /* CEI comment: ORG:0 */
+			min_charge_temperature_plus_x_degree = <5 >; /* CEI comment: ORG:6 */
 			err_charge_temperature = <0xff >;
 
 			/* Linear Charging Threshold */
@@ -2209,7 +2239,8 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 			usb_charger_current_unconfigured = <7000 >;	/* Unit: 0.01 mA */
 			usb_charger_current_configured = <50000 >;	/* Unit: 0.01 mA */
 			usb_charger_current = <50000 >;	/* Unit: 0.01 mA */
-			ac_charger_current = <80000 >;	/* Unit: 0.01 mA */
+			ac_charger_current = <185600 >;	/* Unit: 0.01 mA */ /* CEI comment : ORG DTS = 80000 */
+			ac_charger_input_current = <150000 >;	/* Unit: 0.01 mA */ /* CEI comment : add item*/	
 			non_std_ac_charger_current = <50000 >;	/* Unit: 0.01 mA */
 			charging_host_charger_current = <65000 >;	/* Unit: 0.01 mA */
 			apple_0_5a_charger_current = <50000 >;	/* Unit: 0.01 mA */
@@ -2230,7 +2261,7 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 			v_0percent_tracking = <3450 >;	/* Unit: mV */
 
 			/* High battery support */
-			high_battery_voltage_support = <0 >;
+			high_battery_voltage_support = <1 >; /* CEI comment */
 
 			/* cust_battery_meter.h */
 			/* ADC resistor  */
@@ -2268,7 +2299,7 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 			ocv_board_compesate = <0 >;
 			r_fg_board_base = <1000 >;
 			r_fg_board_slope = <1000 >;
-			car_tune_value = <118 >;
+			car_tune_value = <117 >;  /* CEI comment: AP:117 */
 
 			/* HW Fuel gague  */
 			current_detect_r_fg = <10 >;	/* Unit: mA */
@@ -2278,15 +2309,15 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 
 			/* HW Fuel gague 2.0*/
 			difference_hwocv_rtc = <30 >;
-			difference_hwocv_swocv = <10>;
-			difference_swocv_rtc = <10>;
+			difference_hwocv_swocv = <25>; /* CEI comment, MTK ORG=10 */
+			difference_swocv_rtc = <30>; /* CEI comment, MTK ORG=10 */
 			max_swocv = <3>;
 
 			difference_voltage_update = <20>;
 			aging1_load_soc = <70>;
 			aging1_update_soc = <30>;
-			batterypseudo100 = <95>;
-			batterypseudo1 = <11>;
+			batterypseudo100 = <99>; /* CEI comment, MTK ORG: 95 */
+			batterypseudo1 = <2>; /* CEI comment, MTK ORG: 11 */
 
 			q_max_by_sys = <1>;			/*8. qmax variant by system drop voltage.*/
 			q_max_sys_voltage = <3350>;
@@ -3106,8 +3137,14 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 
 	utos {
 	compatible = "microtrust,utos";
-	interrupts = <GIC_SPI 252 IRQ_TYPE_EDGE_RISING>,
-		<GIC_SPI 253 IRQ_TYPE_EDGE_RISING>;
+	interrupts = <GIC_SPI 244 IRQ_TYPE_EDGE_RISING>,
+		<GIC_SPI 245 IRQ_TYPE_EDGE_RISING>,
+		<GIC_SPI 246 IRQ_TYPE_EDGE_RISING>,
+		<GIC_SPI 250 IRQ_TYPE_EDGE_RISING>,
+		<GIC_SPI 251 IRQ_TYPE_EDGE_RISING>,
+		<GIC_SPI 252 IRQ_TYPE_EDGE_RISING>,
+		<GIC_SPI 253 IRQ_TYPE_EDGE_RISING>,
+		<GIC_SPI 255 IRQ_TYPE_EDGE_RISING>;
 	};
 	utos_tester {
 		compatible = "microtrust,tester-v1";
@@ -3184,10 +3221,18 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 	};
 
 	usb_typec: usb_typec {
-		compatible = "mediatek, USB_TYPEC-eint";
+		compatible = "mediatek,fusb300-eint";
 		status = "disabled";
 	};
 
+	/* [VY36] S- BUG#4 Grace_Chang hall sensor bring up */
+	cei_hall_out: cei_hall_out {
+		compatible = "mediatek, cei_hall_out-eint";
+				interrupt-parent = <&eintc>;
+				interrupts = <107 IRQ_TYPE_LEVEL_LOW>;
+				debounce = <107 0>;
+	};
+	/* [VY36] E- BUG#4 Grace_Chang hall sensor bring up */
 	swtp: swtp {
 		compatible = "mediatek, swtp-eint";
 	};
@@ -3213,7 +3258,7 @@ firmware_class.path=/vendor/firmware loop.max_part=7";
 	cam_cal_drv{
 	    compatible = "mediatek,cam_cal_drv";
 	    main_bus = <2>;
-	    sub_bus = <1>;
+	    sub_bus = <4>;
 	};
 
 	firmware {

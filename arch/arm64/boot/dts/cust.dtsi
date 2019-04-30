@@ -24,16 +24,34 @@
 	debounce = <1 0>;
 	status = "okay";
 };
-&gyro {
-	interrupt-parent = <&eintc>;
-	interrupts = <2 IRQ_TYPE_LEVEL_HIGH>;
-	debounce = <2 0>;
-	status = "okay";
-};
 &hall_1 {
 	interrupt-parent = <&eintc>;
 	interrupts = <3 IRQ_TYPE_LEVEL_LOW>;
 	debounce = <3 1000>;
+	status = "okay";
+};
+&accdet {
+	interrupt-parent = <&eintc>;
+	interrupts = <2 IRQ_TYPE_LEVEL_LOW>;
+	debounce = <2 256000>;
+	status = "okay";
+};
+&msdc1_ins {
+	interrupt-parent = <&eintc>;
+	interrupts = <3 IRQ_TYPE_LEVEL_LOW>;
+	debounce = <3 1000>;
+	status = "okay";
+};
+&gyro {
+	interrupt-parent = <&eintc>;
+	interrupts = <4 IRQ_TYPE_LEVEL_HIGH>;
+	debounce = <4 0>;
+	status = "okay";
+};
+&mse {
+	interrupt-parent = <&eintc>;
+	interrupts = <5 IRQ_TYPE_LEVEL_HIGH>;
+	debounce = <5 0>;
 	status = "okay";
 };
 &als {
@@ -42,16 +60,16 @@
 	debounce = <6 0>;
 	status = "okay";
 };
-&fingerprint {
+&mrdump_ext_rst {
 	interrupt-parent = <&eintc>;
-	interrupts = <8 IRQ_TYPE_EDGE_RISING>;
-	debounce = <8 0>;
+	interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
+	debounce = <7 512000>;
 	status = "okay";
 };
 &irq_nfc {
 	interrupt-parent = <&eintc>;
-	interrupts = <28 IRQ_TYPE_LEVEL_HIGH>;
-	debounce = <28 0>;
+	interrupts = <26 IRQ_TYPE_LEVEL_HIGH>;
+	debounce = <26 0>;
 	status = "okay";
 };
 &dsi_te {
@@ -60,12 +78,25 @@
 	debounce = <44 0>;
 	status = "okay";
 };
-&msdc1_ins {
+&cei_camera_capture {
 	interrupt-parent = <&eintc>;
-	interrupts = <79 IRQ_TYPE_LEVEL_HIGH>;
-	debounce = <79 1000>;
+	interrupts = <62 IRQ_TYPE_LEVEL_LOW>;
+	debounce = <62 0>;
 	status = "okay";
 };
+&cei_camera_focus {
+	interrupt-parent = <&eintc>;
+	interrupts = <79 IRQ_TYPE_LEVEL_LOW>;
+	debounce = <79 0>;
+	status = "okay";
+};
+&cei_hall_out {
+	interrupt-parent = <&eintc>;
+	interrupts = <107 IRQ_TYPE_LEVEL_LOW>;
+	debounce = <107 0>;
+	status = "okay";
+};
+
 
 /********************
  * GPIO USAGE MAPPING DTSI File
@@ -78,9 +109,8 @@
 	GPIO_SIM1_SCLK = <39>;
 	GPIO_SIM1_SRST = <40>;
 	GPIO_SIM1_SIO = <41>;
-	GPIO_FDD_BAND_SUPPORT_DETECT_1ST_PIN = <80>;
-	GPIO_FDD_BAND_SUPPORT_DETECT_2ND_PIN = <81>;
-	GPIO_FDD_BAND_SUPPORT_DETECT_3RD_PIN = <82>;
+	GPIO_FDD_BAND_SUPPORT_DETECT_1ST_PIN = <89>;
+	GPIO_FDD_BAND_SUPPORT_DETECT_2ND_PIN = <90>;
 };
 
 &eintc {
@@ -91,15 +121,6 @@
 		dedicated = <0 0>;
 		src_pin = <0 1>;
 		sockettype=<0 0>;
-		status = "okay";
-	};
-	MD1_SIM2_HOT_PLUG_EINT@1 {
-		compatible = "mediatek,MD1_SIM2_HOT_PLUG_EINT-eint";
-		interrupts = <1 4>;
-		debounce = <1 100000>;
-		dedicated = <1 0>;
-		src_pin = <1 2>;
-		sockettype=<1 0>;
 		status = "okay";
 	};
 };
@@ -244,24 +265,14 @@
 &i2c0 {
 	#address-cells = <1>;
 	#size-cells = <0>;
-	cap_touch_mtk:cap_touch@5d {
+	cap_touch@10 {
 		compatible = "mediatek,cap_touch";
 		reg = <0x10>;
 		status = "okay";
 	};
-	i2c_lcd_bias_mtk:i2c_lcd_bias@3e {
+	i2c_lcd_bias@3e {
 		compatible = "mediatek,i2c_lcd_bias";
 		reg = <0x3e>;
-		status = "okay";
-	};
-	swithing_charger_mtk:swithing_charger@36 {
-		compatible = "mediatek,swithing_charger";
-		reg = <0x36>;
-		status = "okay";
-	};
-	coulomb_mtk:coulomb@2f {
-		compatible = "mediatek,coulomb";
-		reg = <0x2f>;
 		status = "okay";
 	};
 };
@@ -269,74 +280,39 @@
 &i2c1 {
 	#address-cells = <1>;
 	#size-cells = <0>;
-	ext_vbat_boost_mtk:ext_vbat_boost@75 {
+	ext_vbat_boost@75 {
 		compatible = "mediatek,ext_vbat_boost";
 		reg = <0x75>;
 		status = "okay";
 	};
-	msensor_mtk:msensor@30 {
-		compatible = "mediatek,msensor";
-		reg = <0x30>;
-		status = "okay";
-	};
-	gyro_mtk:gyro@6b {
-		compatible = "mediatek,gyro";
+	swithing_charger@6b {
+		compatible = "mediatek,swithing_charger";
 		reg = <0x6b>;
 		status = "okay";
 	};
-	pressure_mtk:pressure@48 {
+	msensor@2e {
+		compatible = "mediatek,msensor";
+		reg = <0x2e>;
+		status = "okay";
+	};
+	gyro@68 {
+		compatible = "mediatek,gyro";
+		reg = <0x68>;
+		status = "okay";
+	};
+	pressure@77 {
 		compatible = "mediatek,pressure";
+		reg = <0x77>;
+		status = "okay";
+	};
+	alsps@48 {
+		compatible = "mediatek,alsps";
 		reg = <0x48>;
 		status = "okay";
 	};
-	alsps_mtk:alsps@1e {
-		compatible = "mediatek,alsps";
-		reg = <0x1e>;
-		status = "okay";
-	};
-	strobe_main_mtk:strobe_main@63 {
+	strobe_main@63 {
 		compatible = "mediatek,strobe_main";
 		reg = <0x63>;
-		status = "okay";
-	};
-	camera_sub_mtk:camera_sub@10 {
-		compatible = "mediatek,camera_sub";
-		reg = <0x10>;
-		status = "okay";
-	};
-	camera_sub_af_mtk:camera_sub_af@0c {
-		compatible = "mediatek,camera_sub_af";
-		reg = <0x0c>;
-		status = "okay";
-	};
-	usb_type_c_mtk:usb_type_c@22 {
-		compatible = "mediatek,usb_type_c";
-		reg = <0x22>;
-		status = "okay";
-	};
-	gsensor_mtk:gsensor@61 {
-		compatible = "mediatek,gsensor";
-		reg = <0x61>;
-		status = "okay";
-	};
-	led_mtk:led@45 {
-		compatible = "mediatek,led";
-		reg = <0x45>;
-		status = "okay";
-	};
-	temperature_mtk:temperature@09 {
-		compatible = "mediatek,temperature";
-		reg = <0x09>;
-		status = "okay";
-	};
-	humidity_mtk:humidity@18 {
-		compatible = "mediatek,humidity";
-		reg = <0x18>;
-		status = "okay";
-	};
-	msensor_1_mtk:msensor_1@2c {
-		compatible = "mediatek,msensor_1";
-		reg = <0x2c>;
 		status = "okay";
 	};
 };
@@ -344,19 +320,14 @@
 &i2c2 {
 	#address-cells = <1>;
 	#size-cells = <0>;
-	camera_main_mtk:camera_main@10 {
+	camera_main@10 {
 		compatible = "mediatek,camera_main";
 		reg = <0x10>;
 		status = "okay";
 	};
-	camera_main_af_mtk:camera_main_af@0c {
+	camera_main_af@0c {
 		compatible = "mediatek,camera_main_af";
 		reg = <0x0c>;
-		status = "okay";
-	};
-	eeprom_mtk:eeprom@50 {
-		compatible = "mediatek,eeprom";
-		reg = <0x50>;
 		status = "okay";
 	};
 };
@@ -364,7 +335,17 @@
 &i2c3 {
 	#address-cells = <1>;
 	#size-cells = <0>;
-	nfc_mtk:nfc@28 {
+	camera_sub@10 {
+		compatible = "mediatek,camera_sub";
+		reg = <0x10>;
+		status = "okay";
+	};
+	camera_sub_af@0c {
+		compatible = "mediatek,camera_sub_af";
+		reg = <0x0c>;
+		status = "okay";
+	};
+	nfc@28 {
 		compatible = "mediatek,nfc";
 		reg = <0x28>;
 		status = "okay";
