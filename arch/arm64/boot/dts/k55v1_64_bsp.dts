@@ -955,50 +955,12 @@
 	status = "okay";
 };
 
-/* HALL start */
-
-&hall_1 {
-	debounce = <3 1>;
-	pinctrl-names = "hall_eint_as_gpio", "hall_eint_as_int";
-	pinctrl-0 = <&hall_eint_as_gpio>;
-	pinctrl-1 = <&hall_eint_as_int>;
-	status = "okay";
-};
-&pio {
-
-	hall_eint_as_gpio: eintgpio@gpio3 {
-		pins_cmd_dat {
-			pins = <PINMUX_GPIO3__FUNC_GPIO3>;
-			slew-rate = <0>;
-			bias-pull-up = <00>;
-		};
-	};
-
-	hall_eint_as_int: eint@gpio3 {
-		pins_cmd_dat {
-			pins = <PINMUX_GPIO3__FUNC_GPIO3>;
-			slew-rate = <0>;
-			bias-pull-up = <00>;
-		};
-	};
-};
-/* HALL end */
 &i2c1 {
 
 	gsensor@22 {
 		compatible = "mediatek,gsensor";
 		reg = <0x22>;
 		status = "okay";
-	};
-
-	pressure@48 {
-		i2c_num	= <1>;
-		i2c_addr = <0x48 0 0 0>;
-		direction = <2>;
-		power_id = <0xffff>;
-		power_vol = <0>;
-		firlen = <6>;
-		is_batch_supported = <1>;
 	};
 
 	gyro@68 {

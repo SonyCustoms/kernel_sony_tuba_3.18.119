@@ -24,12 +24,6 @@
 	debounce = <1 0>;
 	status = "okay";
 };
-&hall_1 {
-	interrupt-parent = <&eintc>;
-	interrupts = <3 IRQ_TYPE_LEVEL_LOW>;
-	debounce = <3 1000>;
-	status = "okay";
-};
 &accdet {
 	interrupt-parent = <&eintc>;
 	interrupts = <2 IRQ_TYPE_LEVEL_LOW>;
