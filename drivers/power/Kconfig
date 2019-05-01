@@ -397,6 +397,10 @@ config BATTERY_GOLDFISH
 	  Say Y to enable support for the battery and AC power in the
 	  Goldfish emulator.
 
+config CHARGER_QNS
+	bool "QNS support"
+	default n
+
 source "drivers/power/reset/Kconfig"
 
 if !ARCH_MT8173

@@ -21,6 +21,5 @@ static inline unsigned int mt_icache_dump(void)
 }
 #endif
 
-extern void __inner_flush_dcache_all(void);
 
 #endif

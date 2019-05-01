@@ -52,7 +52,6 @@ struct mt_battery_meter_custom_data {
 
 	int temperature_t0;
 	int tempearture_t1;
-	int temperature_t1_5;
 	int temperature_t2;
 	int temperature_t3;
 	int temperature_t;
@@ -61,13 +60,11 @@ struct mt_battery_meter_custom_data {
 
 	int q_max_pos_50;
 	int q_max_pos_25;
-	int q_max_pos_10;
 	int q_max_pos_0;
 	int q_max_neg_10;
 
 	int q_max_pos_50_h_current;
 	int q_max_pos_25_h_current;
-	int q_max_pos_10_h_current;
 	int q_max_pos_0_h_current;
 	int q_max_neg_10_h_current;
 
@@ -119,12 +116,10 @@ struct mt_battery_meter_custom_data {
 	void *p_batt_temperature_table;
 	void *p_battery_profile_t0;
 	void *p_battery_profile_t1;
-	void *p_battery_profile_t1_5;
 	void *p_battery_profile_t2;
 	void *p_battery_profile_t3;
 	void *p_r_profile_t0;
 	void *p_r_profile_t1;
-	void *p_r_profile_t1_5;
 	void *p_r_profile_t2;
 	void *p_r_profile_t3;
 	void *p_battery_profile_temperature;
