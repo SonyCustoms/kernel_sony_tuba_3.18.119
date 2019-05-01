@@ -240,7 +240,7 @@ static unsigned int hw_bc11_stepA2(void)
 static unsigned int hw_bc11_stepB2(void)
 {
 	unsigned int wChargerAvail = 0;
-#if 0
+
 	/* RG_bc11_IPU_EN[1:0]=10 */
 	bc11_set_register_value(PMIC_RG_BC11_IPU_EN, 0x2);
 	/* RG_bc11_VREF_VTH = [1:0]=01 */
@@ -273,31 +273,6 @@ static unsigned int hw_bc11_stepB2(void)
 
 
 	return wChargerAvail;
-#else
-
-	/*enable the voltage source to DM*/
-	bc11_set_register_value(PMIC_RG_BC11_VSRC_EN, 0x1);
-	/* enable the pull-down current to DP */
-	bc11_set_register_value(PMIC_RG_BC11_IPD_EN, 0x2);
-	/* VREF threshold voltage for comparator  =0.325V */
-	bc11_set_register_value(PMIC_RG_BC11_VREF_VTH, 0x0);
-	/* enable the comparator to DP */
-	bc11_set_register_value(PMIC_RG_BC11_CMP_EN, 0x2);
-
-	msleep(80);
-	wChargerAvail = bc11_get_register_value(PMIC_RGS_BC11_CMP_OUT);
-	if (wChargerAvail == 1) {
-		battery_log(BAT_LOG_CRTI, "DCP, keep DM voltage source in stepB2\n");
-		return wChargerAvail;
-	}
-
-	/*reset to default value*/
-	bc11_set_register_value(PMIC_RG_BC11_VSRC_EN, 0x0);
-	bc11_set_register_value(PMIC_RG_BC11_IPD_EN, 0x0);
-	bc11_set_register_value(PMIC_RG_BC11_CMP_EN, 0x0);
-
-	return wChargerAvail;
-#endif
 }
 
 
@@ -326,28 +301,16 @@ static void hw_bc11_done(void)
 
 }
 
-void hw_bc11_dcd_release(void)
-{
-	bc11_set_register_value(PMIC_RG_BC11_VSRC_EN, 0x0);
-	bc11_set_register_value(PMIC_RG_BC11_VREF_VTH, 0x0);
-	bc11_set_register_value(PMIC_RG_BC11_CMP_EN, 0x0);
-	bc11_set_register_value(PMIC_RG_BC11_IPU_EN, 0x0);
-	bc11_set_register_value(PMIC_RG_BC11_IPD_EN, 0x0);
-	bc11_set_register_value(PMIC_RG_BC11_BIAS_EN, 0x0);
-
-	Charger_Detect_Release();
-}
 
 void hw_charging_enable_dp_voltage(int ison)
 {
 	static int cnt;
 
 	if (ison == 1) {
-		if (cnt == 0) {
+		if (cnt == 0)
 			cnt = 1;
-			hw_bc11_init();
-			bc11_set_register_value(PMIC_RG_BC11_VSRC_EN, 0x2);
-		}
+		hw_bc11_init();
+		bc11_set_register_value(PMIC_RG_BC11_VSRC_EN, 0x2);
 	} else if (cnt == 1) {
 		hw_bc11_done();
 		cnt = 0;
@@ -393,8 +356,6 @@ int hw_charging_get_charger_type(void)
 				is_dcp_type = true;
 				CHR_Type_num = STANDARD_CHARGER;
 				/*battery_log(1, "step B2 : STANDARD CHARGER!\r\n");*/
-				battery_log(BAT_LOG_CRTI, "DCP, keep DM voltage source\n");
-				return CHR_Type_num;
 			} else {
 				CHR_Type_num = CHARGING_HOST;
 				/*battery_log(1, "step B2 :  Charging Host!\r\n");*/

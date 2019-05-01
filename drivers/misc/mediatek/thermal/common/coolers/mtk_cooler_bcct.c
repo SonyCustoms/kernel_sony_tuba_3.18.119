@@ -207,16 +207,6 @@ static void chrlmt_set_limit_handler(struct work_struct *work)
 #ifdef CONFIG_MTK_SWITCH_INPUT_OUTPUT_CURRENT_SUPPORT
 		set_chr_input_current_limit(chrlmt_chr_input_curr_limit);
 #endif
-
-		//[agold][xfl][20161201][start][current set to AGOLD_BCCT_MIN_CURRENT__INT only when T_AP<AGOLD_BCCT_T_AP_THRESHOLD_H__INT]
-		#if defined(AGOLD_BCCT_MIN_CURRENT__INT) && defined(AGOLD_BCCT_T_AP_THRESHOLD_H__INT)
-		if ((chrlmt_bat_chr_curr_limit < AGOLD_BCCT_MIN_CURRENT__INT) && (mtkts_bts_get_hw_temp() < AGOLD_BCCT_T_AP_THRESHOLD_H__INT))
-		{
-			chrlmt_bat_chr_curr_limit = AGOLD_BCCT_MIN_CURRENT__INT;
-		}
-		#endif
-		//[agold][xfl][20160801][end]
-
 		set_bat_charging_current_limit(chrlmt_bat_chr_curr_limit);
 }
 
@@ -257,15 +247,16 @@ static int chrlmt_set_limit(struct chrlmt_handle *handle, int chr_input_curr_lim
 		if (bcct_chrlmt_queue)
 			queue_work(bcct_chrlmt_queue, &bcct_chrlmt_work);
 
-		mtk_cooler_bcct_dprintk_always("%s %p %d %d\n", __func__
+		mtk_cooler_bcct_dprintk_always("[IUSB] LE(K)=> %s %p %d %d\n", __func__
 			, handle, chrlmt_chr_input_curr_limit, chrlmt_bat_chr_curr_limit);
 	}
 
 	return 0;
 }
 
-
-static int cl_bcct_klog_on;
+//CEI comments start//
+static int cl_bcct_klog_on = 1;
+//CEI comments end//
 static struct thermal_cooling_device *cl_bcct_dev[MAX_NUM_INSTANCE_MTK_COOLER_BCCT] = { 0 };
 static unsigned long cl_bcct_state[MAX_NUM_INSTANCE_MTK_COOLER_BCCT] = { 0 };
 static struct chrlmt_handle cl_bcct_chrlmt_handle;
@@ -299,7 +290,13 @@ static void mtk_cl_bcct_set_bcct_limit(void)
 			chrlmt_set_limit(&cl_bcct_chrlmt_handle, -1, -1);
 			mtk_cooler_bcct_dprintk("%s limit=-1\n", __func__);
 		} else {
+//CEI comments start//
+#if 0 //MTK_ORG
 			chrlmt_set_limit(&cl_bcct_chrlmt_handle, -1, cl_bcct_cur_limit);
+#else
+			chrlmt_set_limit(&cl_bcct_chrlmt_handle, cl_bcct_cur_limit, -1);
+#endif
+//CEI comments end//
 			mtk_cooler_bcct_dprintk("%s limit=%d\n", __func__
 				, cl_bcct_cur_limit);
 		}
@@ -355,12 +352,6 @@ static int mtk_cooler_bcct_register_ltf(void)
 	mtk_cooler_bcct_dprintk("%s\n", __func__);
 
 	chrlmt_register(&cl_bcct_chrlmt_handle);
-
-#if (MAX_NUM_INSTANCE_MTK_COOLER_BCCT == 3)
-	MTK_CL_BCCT_SET_LIMIT(1000, cl_bcct_state[0]);
-	MTK_CL_BCCT_SET_LIMIT(500, cl_bcct_state[1]);
-	MTK_CL_BCCT_SET_LIMIT(0, cl_bcct_state[2]);
-#endif
 
 	for (i = MAX_NUM_INSTANCE_MTK_COOLER_BCCT; i-- > 0;) {
 		char temp[20] = { 0 };
@@ -542,7 +533,13 @@ static int mtk_cl_abcct_set_cur_temp(struct thermal_cooling_device *cdev, unsign
 		, __func__, abcct_curr_temp, pterm, abcct_iterm, dterm, delta,
 		abcct_cur_chr_input_curr_limit, abcct_cur_bat_chr_curr_limit);
 
+//CEI comments start//
+#if 0 //MTK_ORG
 	chrlmt_set_limit(&abcct_chrlmt_handle, abcct_cur_chr_input_curr_limit, abcct_cur_bat_chr_curr_limit);
+#else
+	chrlmt_set_limit(&abcct_chrlmt_handle, abcct_cur_chr_input_curr_limit, -1);
+#endif
+//CEI comments end//
 
 	return 0;
 }
@@ -975,16 +972,16 @@ static int bcct_lcmoff_fb_notifier_callback(struct notifier_block *self, unsigne
 	struct fb_event *evdata = data;
 	int blank;
 
-	/* skip if it's not a blank event */
-	if ((event != FB_EVENT_BLANK) || (data == NULL))
-		return 0;
-
 	/* skip if policy is not enable */
 	if (!chrlmt_lcmoff_policy_enable)
 		return 0;
 
 	blank = *(int *)evdata->data;
 	mtk_cooler_bcct_dprintk("%s: blank = %d, event = %lu\n", __func__, blank, event);
+
+	/* skip if it's not a blank event */
+	if (event != FB_EVENT_BLANK)
+		return 0;
 
 	switch (blank) {
 	/* LCM ON */

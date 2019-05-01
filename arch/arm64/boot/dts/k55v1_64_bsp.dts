@@ -1,4 +1,4 @@
-#include <generated/autoconf.h>
+
 /dts-v1/;
 
 #ifdef CONFIG_MTK_DTBO_FEATURE
@@ -6,16 +6,20 @@
 #include <dt-bindings/mmc/mt6755-msdc.h>
 #include "mt6755-pinfunc.h"
 #else
-#include "mt6755.dts"
+#include "mt6755.dtsi"
 #endif
+#include "mt6755.dtsi"
+#include "cust.dtsi"
 
-&memory {
+/ {
+	memory@40000000 {
 		device_type = "memory";
 		reg = <0 0x40000000 0 0x3e800000>;
 	};
-/* chosen */
-&chosen {
+	/* chosen */
+	chosen {
 		bootargs = "console=tty0 console=ttyMT0,921600n1 root=/dev/ram initrd=0x44000000,0x4B434E loglevel=8";
+
 		/* fpga may has no lk, we need to specify display info here */
 		/* fb buffer is reserved using this dts by memory node above */
 		atag,videolfb-fb_base_h = <0x0>;
@@ -26,9 +30,7 @@
 		atag,videolfb-fps= <6000>;
 		atag,videolfb-vramSize= <0x01800000>;
 		atag,videolfb-lcmname= "hx8394f_hd_dsi_vdo_truly";
-};
-
-&odm {
+	};
 	led0:led@0 {
 		compatible = "mediatek,red";
 		led_mode = <3>;
@@ -565,7 +567,7 @@
 
 /* CONSYS GPIO standardization */
 &pio {
-	consys_pins_default: consys_default {
+	consys_pins_default: default {
 	};
 
 	gpslna_pins_init: gpslna@0 {
@@ -750,24 +752,24 @@
 
 	};
 	uart0_rx_set_cfg:uart0_rx_set@gpio105 {
-		pins_cmd_dat {
+	    pins_cmd_dat {
 			pins = <PINMUX_GPIO105__FUNC_URXD0>;
 		};
 	};
 	uart0_rx_clr_cfg:uart0_rx_clear@gpio105  {
-		pins_cmd_dat {
+	    pins_cmd_dat {
 			pins = <PINMUX_GPIO105__FUNC_GPIO105>;
 			slew-rate = <1>;
 			output-high;
 		};
 	};
 	uart0_tx_set_cfg:uart0_tx_set@gpio106  {
-		pins_cmd_dat {
+	    pins_cmd_dat {
 			pins = <PINMUX_GPIO106__FUNC_UTXD0>;
 		};
 	};
 	uart0_tx_clr_cfg:uart0_tx_clear@gpio106  {
-		pins_cmd_dat {
+	    pins_cmd_dat {
 			pins = <PINMUX_GPIO106__FUNC_GPIO106>;
 			slew-rate = <1>;
 			output-high;
@@ -832,7 +834,7 @@
 
 /* NFC GPIO standardization */
 &pio {
-	nfc_default: nfc_default {
+	nfc_default: default {
 
 	};
 
@@ -907,11 +909,14 @@
 };
 /* NFC end */
 
+
+
+
 &pio {
 	iddig_default: iddig_default {
 	};
 
-	iddig_init: iddig_init {
+	gpio78_mode1_iddig: iddig_init {
 		pins_cmd_dat {
 			pins = <PINMUX_GPIO78__FUNC_IDDIG>;
 			slew-rate = <0>;
@@ -944,7 +949,7 @@
 &usb0 {
 	pinctrl-names = "iddig_default", "iddig_init";
 	pinctrl-0 = <&iddig_default>;
-	pinctrl-1 = <&iddig_init>;
+	pinctrl-1 = <&gpio78_mode1_iddig>;
 	status = "okay";
 };
 
@@ -958,15 +963,15 @@
 
 &i2c1 {
 
-	gsensor@22 {
-		compatible = "mediatek,gsensor";
-		reg = <0x22>;
-		status = "okay";
-	};
-
 	gyro@68 {
 		compatible = "mediatek,gyro";
 		reg = <0x69>;
+		status = "okay";
+	};
+
+	gsensor@22 {
+		compatible = "mediatek,gsensor";
+		reg = <0x22>;
 		status = "okay";
 	};
 
@@ -978,7 +983,3 @@
 	};
 	/*jonny e-compass 2nd E*/
 };
-#include <k55v1_64_bsp/cust.dtsi>
-/* #include "cust.dtsi" */
-/*End of this file, DO NOT ADD ANYTHING HERE*/
-

@@ -1,22 +1,17 @@
 /*
- * Copyright (c) 2017 MediaTek Inc.
+ * Mediatek's MT6755 SoC device tree source
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Copyright (c) 2013 MediaTek Co., Ltd.
+ *              http://www.mediatek.com
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
-#include <generated/autoconf.h>
 #include <dt-bindings/clock/mt6755-clk.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/mmc/mt6755-msdc.h>
 #include "mt6755-pinfunc.h"
+#include <generated/autoconf.h>
 #ifdef CONFIG_MTK_DTBO_FEATURE
 /dts-v1/;
 #endif
@@ -29,7 +24,7 @@
 	#size-cells = <2>;
 
 	/* chosen */
-	chosen: chosen {
+	chosen {
 		bootargs = "console=tty0 console=ttyMT0,921600n1 root=/dev/ram initrd=0x44000000,0x4b434e loglevel=8";
 	};
 
@@ -89,7 +84,7 @@
 		affinity_info = <0x84000004>;
 	};
 
-	cpus: cpus {
+	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
 
@@ -235,12 +230,12 @@
 		};
 	};
 
-	memory: memory@40000000 {
+	memory@40000000 {
 		device_type = "memory";
 		reg = <0 0x40000000 0 0x20000000>;
 	};
 
-	reserved_memory: reserved-memory {
+	reserved-memory {
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;
@@ -275,15 +270,6 @@
 			alignment = <0 0x200000>;
 			alloc-ranges = <0 0x40000000 0 0x60000000>;
 		};
-
-#ifdef CONFIG_MICROTRUST_TEE_SUPPORT
-		soter-shared-mem {
-			compatible = "microtrust,shared_mem";
-			no-map;
-			size = <0 0x200000>;
-			alloc-ranges = <0 0x40000000 0 0x50000000>;
-		};
-#endif
 
 		spm-reserve-memory {
 			compatible = "mediatek,spm-reserve-memory";
@@ -385,7 +371,7 @@
 		};
 	};
 
-	soc: soc {
+	soc {
 		compatible = "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <1>;
@@ -3088,9 +3074,6 @@
 		<GIC_SPI 253 IRQ_TYPE_EDGE_RISING>,
 		<GIC_SPI 255 IRQ_TYPE_EDGE_RISING>;
 	};
-	utos_tester {
-		compatible = "microtrust,tester-v1";
-	};
 
 	/* Add dummy nodes for cust.dtsi */
 	als: als {
@@ -3144,7 +3127,7 @@
 	};
 
 	goodix_fp: fingerprint@ {
-		compatible = "mediatek,goodix-fp-common";
+		compatible = "mediatek,goodix-fp";
 	};
 
 	usb_typec: usb_typec {
@@ -3269,10 +3252,4 @@
 #include "mt6353.dtsi"
 #else
 #include "mt6351.dtsi"
-#endif
-#ifdef CONFIG_MFD_RT5081A_PMU
-#include "rt5081a.dtsi"
-#endif
-#ifdef CONFIG_TCPC_CLASS
-#include "tcpc_config.dtsi"
 #endif

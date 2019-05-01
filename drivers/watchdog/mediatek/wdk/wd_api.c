@@ -21,6 +21,22 @@
 #include <mt-plat/mt_reboot.h>
 #include <mt-plat/mtk_rtc.h>
 
+#ifdef CONFIG_SONY_S1_SUPPORT
+#define S1_WARMBOOT_MAGIC_VAL (0xBEEF)
+#define S1_WARMBOOT_NORMAL    (0x7651)
+#define S1_WARMBOOT_S1        (0x6F53)
+#define S1_WARMBOOT_FB        (0x7700)
+#define S1_WARMBOOT_NONE      (0x0000)
+#define S1_WARMBOOT_CLEAR     (0xABAD)
+#define S1_WARMBOOT_TOOL      (0x7001)
+#define S1_WARMBOOT_RECOVERY  (0x7711)
+#define S1_WARMBOOT_FOTA      (0x6F46)
+#define S1_WARMBOOT_VERIFIED_BOOT_UPDATE      (0x7708)
+#define S1_WARMBOOT_FOTA_CACHE (0x6F50)
+
+extern void write_magic(volatile unsigned long magic_write, int log_option);
+#endif
+
 static int wd_cpu_hot_plug_on_notify(int cpu);
 static int wd_cpu_hot_plug_off_notify(int cpu);
 static int spmwdt_mode_config(WD_REQ_CTL en, WD_REQ_MODE mode);
@@ -606,8 +622,31 @@ void arch_reset(char mode, const char *cmd)
 	} else if (cmd && !strcmp(cmd, "rpmbpk")) {
 		mtk_wd_SetNonResetReg2(0x0, 1);
 #endif
+	//CEI comments start//
+	//Add for handle oemS and oemF by adb reboot command
+#ifdef CONFIG_SONY_S1_SUPPORT
+	} else if( (cmd && !strcmp(cmd, "oemS")) || (cmd && !strcmp(cmd, "oem-53")) ) {
+		reboot = 1;
+		write_magic(S1_WARMBOOT_MAGIC_VAL | (S1_WARMBOOT_S1 << 16), 0);
+	} else if(cmd && !strcmp(cmd, "oemF")) {
+		reboot = 1;
+		write_magic(S1_WARMBOOT_MAGIC_VAL | (S1_WARMBOOT_FOTA << 16), 0);
+	} else if(cmd && !strcmp(cmd, "dm-verity device corrupted")) {
+		reboot = 1;
+		write_magic(S1_WARMBOOT_MAGIC_VAL | (S1_WARMBOOT_VERIFIED_BOOT_UPDATE << 16), 0);
+	} else if(cmd && !strcmp(cmd, "oem-50")) {
+		reboot = 1;
+		write_magic(S1_WARMBOOT_MAGIC_VAL | (S1_WARMBOOT_FOTA_CACHE << 16), 0);
+#endif // #ifdef CONFIG_SONY_S1_SUPPORT
+       //CEI comments end//
 	} else {
 		reboot = 1;
+	//CEI comments start//
+		//Add for handle oemS and oemF by adb reboot command
+#ifdef CONFIG_SONY_S1_SUPPORT
+		write_magic(S1_WARMBOOT_MAGIC_VAL | (S1_WARMBOOT_NORMAL << 16), 0);
+#endif
+	//CEI comments end//
 	}
 
 	if (res)

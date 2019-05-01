@@ -155,12 +155,6 @@ struct battery_meter_custom_data {
 
 struct battery_meter_custom_data {
 
-	int versionID1;
-	int versionID2;
-
-	int last_low_battery_temp;
-
-
 	/* cust_battery_meter.h */
 	int soc_flow;
 
@@ -189,6 +183,16 @@ struct battery_meter_custom_data {
 	int q_max_pos_25_h_current;
 	int q_max_pos_0_h_current;
 	int q_max_neg_10_h_current;
+
+	/* Qmax for battery low CV*/
+	int q_max_pos_50_lcv;
+	int q_max_pos_25_lcv;
+	int q_max_pos_0_lcv;
+	int q_max_neg_10_lcv;
+	int q_max_pos_50_h_current_lcv;
+	int q_max_pos_25_h_current_lcv;
+	int q_max_pos_0_h_current_lcv;
+	int q_max_neg_10_h_current_lcv;
 
 	int oam_d5; /* 1 : D5,   0: D2 */
 
@@ -246,9 +250,9 @@ struct battery_meter_custom_data {
 	int shutdown_gauge1_xmins;
 	int shutdown_gauge1_mins;
 
-	int trk_point_en;
-	int trk_point_thr;
-
+	int tracking_gap;
+	int trackingoffset;
+	int trackingen;
 
 	int min_charging_smooth_time;
 
@@ -258,9 +262,10 @@ struct battery_meter_custom_data {
 	int apsleep_battery_voltage_compensate;
 
 	int bat_task_period;
-
 	int zcv_int_enable;
-
+	int sc30_enable;
+	int trk_point_en;
+	int trk_point_thr;
 };
 
 #endif
@@ -335,7 +340,9 @@ typedef enum {
 	FG_DAEMON_CMD_SET_VBATSOC,
 	FG_DAEMON_CMD_SET_CAR_TUNE_VALUE,
 	FG_DAEMON_CMD_GET_ZCV_INT_HW_OCV,
-
+	FG_DAEMON_CMD_PRINT_LOG,
+	FG_DAEMON_CMD_GET_LOW_CV,
+	FG_DAEMON_CMD_SET_AGING_FACTOR,
 	FG_DAEMON_CMD_FROM_USER_NUMBER
 } FG_DAEMON_CTRL_CMD_FROM_USER;
 
@@ -382,6 +389,12 @@ extern signed int battery_meter_get_charging_current_imm(void);
 extern signed int battery_meter_get_charging_current(void);
 extern signed int battery_meter_get_battery_current(void);
 extern kal_bool battery_meter_get_battery_current_sign(void);
+#ifdef CONFIG_CHARGER_QNS
+extern signed int battery_meter_get_battery_current_now(void);
+extern signed int battery_meter_get_qmax(void);
+extern signed int battery_meter_get_design_qmax(void);
+extern signed int battery_meter_get_battery_id(void);
+#endif
 extern signed int battery_meter_get_car(void);
 extern signed int battery_meter_get_battery_temperature(void);
 extern signed int battery_meter_get_charger_voltage(void);
@@ -396,7 +409,6 @@ extern signed int battery_meter_get_battery_nPercent_UI_SOC(void);	/* tracking p
 
 extern signed int battery_meter_get_tempR(signed int dwVolt);
 extern signed int battery_meter_get_tempV(void);
-extern signed int battery_meter_get_QMAX25(void);
 extern signed int battery_meter_get_VSense(void);/* isense voltage */
 extern void battery_meter_smooth_uisoc2(void);
 extern int wakeup_fg_algo(int flow_state);
@@ -427,18 +439,8 @@ extern signed int battery_meter_meta_tool_cali_car_tune(int);
 extern void mt_battery_set_init_vol(int);
 
 #if defined(CONFIG_MTK_HAFG_20)
-extern struct battery_meter_custom_data batt_meter_cust_data;
-extern struct battery_meter_table_custom_data batt_meter_table_cust_data;
-extern unsigned int get_cv_voltage(void);
-extern void battery_meter_recovery_run(int flow_state);
-extern void battery_meter_get_init_value(signed int *voltage, bool *is_charging, signed int *bat_current);
-extern void battery_meter_set_r_bat(int r_bat);
-extern void battery_meter_set_sw_ocv(int voltage);
-extern int battery_meter_get_hw_ocv(void);
-extern bool is_recovery_mode(void);
-extern void bmr_init(void);
-extern void bmr_run(int flow_state);
-extern void battery_meter_set_fg_int(void);
+unsigned int get_cv_voltage(void);
+void set_sc30_low_cv_voltage(kal_bool low_cv);
 #endif
 
 #endif /* #ifndef _BATTERY_METER_H */

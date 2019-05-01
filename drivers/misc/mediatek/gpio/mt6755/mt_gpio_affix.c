@@ -25,8 +25,11 @@ void mt_gpio_pin_decrypt(unsigned long *cipher)
 {
 	/* just for debug, find out who used pin number directly */
 	if ((*cipher & (0x80000000)) == 0) {
-		GPIOERR("GPIO%u HARDCODE warning!!!\n", (unsigned int)(*cipher));
-		dump_stack();
+		//CEI comments start
+		
+		//GPIOERR("GPIO%u HARDCODE warning!!!\n", (unsigned int)(*cipher));
+		//dump_stack();
+        //CEI comments end		
 		/* return; */
 	}
 

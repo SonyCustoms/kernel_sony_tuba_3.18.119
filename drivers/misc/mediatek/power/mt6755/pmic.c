@@ -105,7 +105,18 @@
 #include <mach/mt_pmic.h>
 #include <mt-plat/mt_reboot.h>
 #include <mach/mt_charging.h>
+//CEI comments start
 
+//CEI comments start
+
+//#include <mt-plat/mt_gpio.h>
+//#include <mt-plat/mt_gpio_core.h>
+//#include <mach/gpio_const.h>
+//extern int get_led_control_state(void);
+//extern int get_gpio_init_state(void);
+//extern struct mutex led_control_mutex;
+//CEI comments end
+//CEI comments end
 /*****************************************************************************
  * PMIC extern variable
  ******************************************************************************/
@@ -792,7 +803,23 @@ unsigned int upmu_get_rgs_chrdet(void)
 	/*val = mt6325_upmu_get_rgs_chrdet();*/
 	val = pmic_get_register_value(PMIC_RGS_CHRDET);
 	PMICLOG("[upmu_get_rgs_chrdet] CHRDET status = %d\n", val);
-
+    //CEI comments start
+    
+	//CEI comments start
+    
+	//mutex_lock(&led_control_mutex);
+    //if (get_gpio_init_state() == 1 && get_led_control_state() == 0) {
+    //    if (val == 1 && mt_get_gpio_out(108) == 1) {
+    //        printk("%s: Pull down GPIO108\n", __func__);
+    //        mt_set_gpio_out(108, 0);
+    //    } else if (val == 0 && mt_get_gpio_out(108) == 0) {
+    //        printk("%s: Pull up GPIO108\n", __func__);
+	//	    mt_set_gpio_out(108, 1);
+  	//    }
+	//}
+    //mutex_unlock(&led_control_mutex);    
+	//CEI comments end
+    //CEI comments end
 	return val;
 }
 
@@ -822,8 +849,7 @@ static ssize_t store_pmic_access(struct device *dev, struct device_attribute *at
 		pvalue = (char *)buf;
 		if (size > 5) {
 			addr = strsep(&pvalue, " ");
-			if (addr)
-				ret = kstrtou32(addr, 16, (unsigned int *)&reg_address);
+			ret = kstrtou32(addr, 16, (unsigned int *)&reg_address);
 		} else
 			ret = kstrtou32(pvalue, 16, (unsigned int *)&reg_address);
 
@@ -831,8 +857,7 @@ static ssize_t store_pmic_access(struct device *dev, struct device_attribute *at
 			/*reg_value = simple_strtoul((pvalue + 1), NULL, 16);*/
 			/*pvalue = (char *)buf + 1;*/
 			val =  strsep(&pvalue, " ");
-			if (val)
-				ret = kstrtou32(val, 16, (unsigned int *)&reg_value);
+			ret = kstrtou32(val, 16, (unsigned int *)&reg_value);
 
 			pr_err("[store_pmic_access] write PMU reg 0x%x with value 0x%x !\n",
 				reg_address, reg_value);
@@ -1075,6 +1100,7 @@ static int mtk_regulator_set_voltage_sel(struct regulator_dev *rdev, unsigned se
 {
 	const struct regulator_desc *rdesc = rdev->desc;
 	struct mtk_regulator *mreg;
+	int ret = 0;
 
 	mreg = container_of(rdesc, struct mtk_regulator, desc);
 
@@ -1115,9 +1141,9 @@ static int mtk_regulator_set_voltage_sel(struct regulator_dev *rdev, unsigned se
 	pr_err("regulator_set_voltage_sel(name=%s selector=%d)\n",
 		rdesc->name, selector);
 	if (mreg->vol_reg != 0)
-		pmic_set_register_value(mreg->vol_reg, selector);
+		ret = pmic_set_register_value(mreg->vol_reg, selector);
 
-	return 0;
+	return ret;
 }
 
 static int mtk_regulator_list_voltage(struct regulator_dev *rdev, unsigned selector)
@@ -1858,11 +1884,11 @@ out:
 
 static int pmic_mt_cust_remove(struct platform_device *pdev)
 {
-       /*platform_driver_unregister(&mt_pmic_driver_probe);*/
+       /*platform_driver_unregister(&mt_pmic_driver);*/
 	return 0;
 }
 
-static struct platform_driver mt_pmic_driver_probe = {
+static struct platform_driver mt_pmic_driver = {
 	.driver = {
 		   .name = "pmic_regulator",
 		   .owner = THIS_MODULE,
@@ -2298,7 +2324,6 @@ void register_low_battery_notify(void (*low_battery_callback) (LOW_BATTERY_LEVEL
 	pr_err("[register_low_battery_notify] prio_val=%d\n", prio_val);
 #endif /*end of #ifdef LOW_BATTERY_PROTECT */
 }
-EXPORT_SYMBOL(register_low_battery_notify);
 #ifdef LOW_BATTERY_PROTECT
 void exec_low_battery_callback(LOW_BATTERY_LEVEL low_battery_level)
 {				/*0:no limit */
@@ -2562,7 +2587,6 @@ void register_battery_percent_notify(void (*battery_percent_callback)(BATTERY_PE
 	}
 #endif /* end of #ifdef BATTERY_PERCENT_PROTECT */
 }
-EXPORT_SYMBOL(register_battery_percent_notify);
 
 #ifdef BATTERY_PERCENT_PROTECT
 void exec_battery_percent_callback(BATTERY_PERCENT_LEVEL battery_percent_level)
@@ -4562,7 +4586,11 @@ static int fb_early_init_dt_get_chosen(unsigned long node, const char *uname, in
 	return 1;
 }
 #endif /*end of #ifdef DLPT_FEATURE_SUPPORT*/
-static int __init pmic_mt_probe(struct platform_device *dev)
+
+//CEI comment start//
+extern int get_car_tune_value_rtc(void);
+//CEI comment end/
+static int pmic_mt_probe(struct platform_device *dev)
 {
 	int ret_device_file = 0, i;
 #ifdef DLPT_FEATURE_SUPPORT
@@ -4570,6 +4598,9 @@ static int __init pmic_mt_probe(struct platform_device *dev)
 	int len = 0;
 #endif
 #if defined(CONFIG_MTK_SMART_BATTERY)
+//CEI comment start//
+//CAR_TUNE_VAL tuning
+#if 0
 	struct device_node *np;
 	u32 val;
 	char *path = "/bus/BAT_METTER";
@@ -4583,6 +4614,10 @@ static int __init pmic_mt_probe(struct platform_device *dev)
 		batt_meter_cust_data.car_tune_value = CAR_TUNE_VALUE;
 		PMICLOG("Get car_tune_value from cust header\n");
 	}
+#else
+	batt_meter_cust_data.car_tune_value = get_car_tune_value_rtc();
+	PMICLOG("LE(K)=> Get car_tune_value from DT %d\n", batt_meter_cust_data.car_tune_value);
+#endif
 #endif
 	/*--- initailize pmic_suspend_state ---*/
 	pmic_suspend_state = false;
@@ -4743,11 +4778,6 @@ static int __init pmic_mt_probe(struct platform_device *dev)
 #endif
 #endif
 	/*pwrkey_sw_workaround_init(); */
-	
-#ifdef AGOLD_DISABLE_PMIC_LED
-	pmic_set_register_value(MT6351_PMIC_CHRIND_EN,0);
-#endif
-	
 	return 0;
 }
 
@@ -4849,7 +4879,7 @@ struct platform_device pmic_mt_device = {
 	.id = -1,
 };
 
-static struct platform_driver pmic_mt_driver_probe = {
+static struct platform_driver pmic_mt_driver = {
 	.probe = pmic_mt_probe,
 	.remove = pmic_mt_remove,
 	.shutdown = pmic_mt_shutdown,
@@ -4950,12 +4980,12 @@ static int __init pmic_mt_init(void)
 		PMICLOG("****[pmic_mt_init] Unable to device register(%d)\n", ret);
 		return ret;
 	}
-	ret = platform_driver_register(&pmic_mt_driver_probe);
+	ret = platform_driver_register(&pmic_mt_driver);
 	if (ret) {
 		PMICLOG("****[pmic_mt_init] Unable to register driver (%d)\n", ret);
 		return ret;
 	}
-	ret = platform_driver_register(&mt_pmic_driver_probe);
+	ret = platform_driver_register(&mt_pmic_driver);
 	if (ret) {
 		PMICLOG("****[pmic_mt_init] Unable to register driver by DT(%d)\n", ret);
 		return ret;
@@ -4969,7 +4999,7 @@ static int __init pmic_mt_init(void)
 		PMICLOG("****[pmic_mt_init] Unable to device register(%d)\n", ret);
 		return ret;
 	}
-	ret = platform_driver_register(&pmic_mt_driver_probe);
+	ret = platform_driver_register(&pmic_mt_driver);
 	if (ret) {
 		PMICLOG("****[pmic_mt_init] Unable to register driver (%d)\n", ret);
 		return ret;
@@ -4988,7 +5018,7 @@ static void __exit pmic_mt_exit(void)
 {
 #if !defined CONFIG_MTK_LEGACY
 #ifdef CONFIG_OF
-	platform_driver_unregister(&mt_pmic_driver_probe);
+	platform_driver_unregister(&mt_pmic_driver);
 #endif
 #endif				/* End of #if !defined CONFIG_MTK_LEGACY */
 }

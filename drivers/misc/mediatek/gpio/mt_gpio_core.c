@@ -33,7 +33,13 @@
 #include <mt-plat/mt_gpio.h>
 #include <mt-plat/mt_gpio_core.h>
 #include <mach/gpio_const.h>
+//CEI comments start
 
+//CEI comments start
+
+//static int gpio_init_flag = 0;
+//CEI comments end
+//CEI comments end
 
 /***********************/
 struct mt_gpio_ops {
@@ -614,6 +620,17 @@ static struct miscdevice mt_gpio_device = {
 };
 
 /*---------------------------------------------------------------------------*/
+//CEI comments start
+
+//CEI comments start
+
+//int get_gpio_init_state(void)
+//{
+//	return gpio_init_flag;
+//}
+//CEI comments end
+//CEI comments end
+
 static int mt_gpio_probe(struct platform_device *dev)
 {
 	int err;
@@ -647,7 +664,13 @@ static int mt_gpio_probe(struct platform_device *dev)
 		GPIOERR("create attribute\n");
 
 	dev_set_drvdata(misc->this_device, mt_gpio);
-
+    //CEI comments start
+    
+    //CEI comments start
+    
+    //gpio_init_flag = 1;
+	//CEI comments end
+    //CEI comments end
 	return err;
 }
 

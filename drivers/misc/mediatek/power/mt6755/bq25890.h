@@ -336,6 +336,7 @@ void bq25890_pumpx_up(unsigned int val);
 
 /* --------------------------------------------------------- */
 extern void bq25890_dump_register(void);
+extern unsigned int bq25890_dump_register_get_data(void);
 extern unsigned int bq25890_reg_config_interface(unsigned char RegNum, unsigned char val);
 
 extern unsigned int bq25890_read_interface(unsigned char RegNum, unsigned char *val, unsigned char MASK,

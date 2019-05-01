@@ -209,8 +209,7 @@ static int pep_increase_ta_vchr(u32 vchr_target)
 			__func__, retry_cnt, vchr_before, vchr_after, vchr_target);
 
 		retry_cnt++;
-	} while (BMT_status.charger_exist && retry_cnt < 3 &&
-		mtk_chr_is_hv_charging_enable());
+	} while (BMT_status.charger_exist && retry_cnt < 3);
 
 	ret = -EIO;
 	battery_log(BAT_LOG_CRTI,
@@ -249,7 +248,9 @@ static int pep_detect_ta(void)
 	pep_enable_vbus_ovp(true);
 
 	/* Set MIVR to 4.5V for vbus 5V */
-	pep_set_mivr(4500);
+//CEI comment start//
+	pep_set_mivr(4400); //MTK ORG=4500
+//CEI comment end//
 
 _err:
 	battery_log(BAT_LOG_CRTI, "%s: failed, is_connect = %d\n",
@@ -347,7 +348,9 @@ int mtk_pep_reset_ta_vchr(void)
 
 	/* Enable OVP */
 	ret = pep_enable_vbus_ovp(true);
-	pep_set_mivr(4500);
+//CEI comment start//
+	pep_set_mivr(4400); //MTK ORG=4500
+//CEI comment end//
 	battery_log(BAT_LOG_CRTI, "%s: OK\n", __func__);
 
 	return ret;
@@ -357,15 +360,6 @@ int mtk_pep_reset_ta_vchr(void)
 int mtk_pep_check_charger(void)
 {
 	int ret = 0;
-
-	if (!mtk_chr_is_hv_charging_enable()) {
-		pr_info("%s: hv charging is disabled\n", __func__);
-		if (pep_is_connect) {
-			pep_leave(true);
-			pep_to_check_chr_type = true;
-		}
-		return ret;
-	}
 
 	if (mtk_pep20_get_is_connect()) {
 		battery_log(BAT_LOG_CRTI, "%s: stop, PE+20 is connected\n",
@@ -433,15 +427,6 @@ _err:
 int mtk_pep_start_algorithm(void)
 {
 	int ret = 0, chr_volt;
-
-	if (!mtk_chr_is_hv_charging_enable()) {
-		pr_info("%s: hv charging is disabled\n", __func__);
-		if (pep_is_connect) {
-			pep_leave(true);
-			pep_to_check_chr_type = true;
-		}
-		return ret;
-	}
 
 	if (mtk_pep20_get_is_connect()) {
 		battery_log(BAT_LOG_CRTI, "%s: stop, PE+20 is connected\n",

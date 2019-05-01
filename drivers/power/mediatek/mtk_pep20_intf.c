@@ -31,11 +31,16 @@ static int pep20_ta_vchr_org = 5000; /* mA */
 static int pep20_idx = -1;
 static int pep20_vbus = 5000; /* mA */
 static bool pep20_to_check_chr_type = true;
-static bool pep20_is_cable_out_occur; /* Plug out happened while detecting PE+20 */
+static bool pep20_is_cable_out_occur; /* Plug out happend while detect PE+20 */
 static bool pep20_is_connect;
 static bool pep20_is_enabled = true;
 
-static struct pep20_profile_t pep20_profile[] = {
+typedef struct _pep20_profile {
+	u32 vbat;
+	u32 vchr;
+} pep20_profile_t, *p_pep20_profile_t;
+
+pep20_profile_t pep20_profile[] = {
 	{3400, VBAT3400_VBUS},
 	{3500, VBAT3500_VBUS},
 	{3600, VBAT3600_VBUS},
@@ -220,7 +225,7 @@ static int pep20_set_ta_vchr(u32 chr_volt)
 			__func__, sw_retry_cnt, retry_cnt, vchr_before, vchr_after, chr_volt);
 
 	} while (!pep20_is_cable_out_occur && BMT_status.charger_exist == KAL_TRUE
-		&& retry_cnt < retry_cnt_max && mtk_chr_is_hv_charging_enable());
+		&& retry_cnt < retry_cnt_max);
 
 	ret = -EIO;
 	battery_log(BAT_LOG_CRTI,
@@ -307,15 +312,45 @@ static int pep20_init_ta(void)
 int mtk_pep20_set_charging_current(CHR_CURRENT_ENUM *ichg, CHR_CURRENT_ENUM *aicr)
 {
 	int ret = 0;
+//CEI comment start//
+	int real_v_chr = 0;
+//CEI comment end//
 
 	if (!pep20_is_connect)
 		return -ENOTSUPP;
 
 	battery_log(BAT_LOG_FULL, "%s: starts\n", __func__);
+//CEI comment start//
+#if 0
 	*aicr = CHARGE_CURRENT_3200_00_MA;
 	*ichg = TA_AC_CHARGING_CURRENT;
-	battery_log(BAT_LOG_CRTI, "%s: OK, ichg = %dmA, AICR = %dmA\n",
-		__func__, *ichg / 100, *aicr / 100);
+#else
+	real_v_chr = battery_meter_get_charger_voltage();
+
+	if(real_v_chr <= 8500)
+	{
+		*aicr = CHARGE_CURRENT_1600_00_MA;
+		*ichg = TA_AC_CHARGING_CURRENT;
+	}
+	else if((real_v_chr > 8500) && (real_v_chr < 9500))
+	{
+		*aicr = CHARGE_CURRENT_1500_00_MA;
+		*ichg = TA_AC_CHARGING_CURRENT;
+	}
+	else if((real_v_chr >= 9500) && (real_v_chr < 11000))
+	{
+		*aicr = CHARGE_CURRENT_1400_00_MA;
+		*ichg = TA_AC_CHARGING_CURRENT;
+	}
+	else // real_v_chr >= 11000
+	{
+		*aicr = CHARGE_CURRENT_1250_00_MA;
+		*ichg = TA_AC_CHARGING_CURRENT;
+	}
+#endif
+	battery_log(BAT_LOG_CRTI, "LE(K)=> %s OK, ichg = %dmA, AICR = %dmA, real_v_chr=%d\n",
+		__func__, *ichg / 100, *aicr / 100, real_v_chr);
+//CEI comment end//
 
 	return ret;
 }
@@ -326,10 +361,6 @@ int mtk_pep20_init(void)
 		"PE+20 TA charger suspend wakelock");
 	mutex_init(&pep20_access_lock);
 	mutex_init(&pep20_pmic_sync_lock);
-
-	battery_charging_control(CHARGING_CMD_SET_PEP20_EFFICIENCY_TABLE,
-		pep20_profile);
-
 	return 0;
 }
 
@@ -374,7 +405,9 @@ int mtk_pep20_reset_ta_vchr(void)
 	}
 
 	pep20_enable_vbus_ovp(true);
-	pep20_set_mivr(4500);
+//CEI comment start//
+	pep20_set_mivr(4400); //MTK ORG=4500
+//CEI comment end//
 	battery_log(BAT_LOG_CRTI, "%s: OK\n", __func__);
 
 	return ret;
@@ -384,15 +417,6 @@ int mtk_pep20_reset_ta_vchr(void)
 int mtk_pep20_check_charger(void)
 {
 	int ret = 0;
-
-	if (!mtk_chr_is_hv_charging_enable()) {
-		pr_info("%s: hv charging is disabled\n", __func__);
-		if (pep20_is_connect) {
-			pep20_leave();
-			pep20_to_check_chr_type = true;
-		}
-		return ret;
-	}
 
 	if (!pep20_is_enabled) {
 		battery_log(BAT_LOG_CRTI, "%s: stop, PE+20 is disabled\n",
@@ -461,15 +485,6 @@ int mtk_pep20_start_algorithm(void)
 	int tune = 0, pes = 0; /* For log, to know the state of PE+20 */
 	kal_bool current_sign;
 	u32 size;
-
-	if (!mtk_chr_is_hv_charging_enable()) {
-		pr_info("%s: hv charging is disabled\n", __func__);
-		if (pep20_is_connect) {
-			pep20_leave();
-			pep20_to_check_chr_type = true;
-		}
-		return ret;
-	}
 
 	if (!pep20_is_enabled) {
 		battery_log(BAT_LOG_CRTI, "%s: stop, PE+20 is disabled\n",

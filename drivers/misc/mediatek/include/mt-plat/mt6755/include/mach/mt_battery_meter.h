@@ -22,7 +22,9 @@
 /*#define HW_FG_FORCE_USE_SW_OCV*/
 /*#define SOC_BY_SW_FG*/
 
+//CEI comments start// //Check//
 /*#define CONFIG_DIS_CHECK_BATTERY*/
+//CEI comments end//
 /*#define FIXED_TBAT_25*/
 
 /* ADC resistor  */
@@ -39,6 +41,8 @@
 
 #define FG_METER_RESISTANCE	0
 
+//CEI comment start//
+#if 0 //MTK ORG
 /* Qmax for battery  */
 #define Q_MAX_POS_50	2743
 #define Q_MAX_POS_25 2709
@@ -50,6 +54,40 @@
 #define Q_MAX_POS_0_H_CURRENT 1145
 #define Q_MAX_NEG_10_H_CURRENT 747
 
+/* Qmax for battery low CV*/
+#define Q_MAX_POS_50_LCV	2700
+#define Q_MAX_POS_25_LCV	2600
+#define Q_MAX_POS_0_LCV		1300
+#define Q_MAX_NEG_10_LCV	700
+
+#define Q_MAX_POS_50_H_CURRENT_LCV	2600
+#define Q_MAX_POS_25_H_CURRENT_LCV	2500
+#define Q_MAX_POS_0_H_CURRENT_LCV	1200
+#define Q_MAX_NEG_10_H_CURRENT_LCV	600
+#else
+//CEI comments end//
+#define Q_MAX_POS_50	2261
+#define Q_MAX_POS_25	2271
+#define Q_MAX_POS_0	2196
+#define Q_MAX_NEG_10	1846
+
+#define Q_MAX_POS_50_H_CURRENT	2250
+#define Q_MAX_POS_25_H_CURRENT	2260
+#define Q_MAX_POS_0_H_CURRENT	2152
+#define Q_MAX_NEG_10_H_CURRENT	1809
+
+/* Qmax for battery low CV*/
+#define Q_MAX_POS_50_LCV	2700
+#define Q_MAX_POS_25_LCV	2600
+#define Q_MAX_POS_0_LCV		1300
+#define Q_MAX_NEG_10_LCV	700
+
+#define Q_MAX_POS_50_H_CURRENT_LCV	2600
+#define Q_MAX_POS_25_H_CURRENT_LCV	2500
+#define Q_MAX_POS_0_H_CURRENT_LCV	1200
+#define Q_MAX_NEG_10_H_CURRENT_LCV	600
+#endif
+//CEI comments end//
 
 /* Discharge Percentage */
 #define OAM_D5	1		/*  1 : D5,   0: D2*/
@@ -58,7 +96,7 @@
 /* battery meter parameter */
 #define CHANGE_TRACKING_POINT
 #ifdef CONFIG_MTK_HAFG_20
-#define CUST_TRACKING_POINT	0
+#define CUST_TRACKING_POINT	15
 #else
 #define CUST_TRACKING_POINT	1
 #endif
@@ -73,7 +111,10 @@
 #if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
 	#define CAR_TUNE_VALUE	101 /*1.00 */
 #else
-	#define CAR_TUNE_VALUE	118 /*1.00 */
+//CEI comment start// //Check//
+//CAR_TUNE_VAL tuning
+	#define CAR_TUNE_VALUE	117 /*1.00 */ //MTK ORG = 118
+//CEI comment end//
 #endif
 
 
@@ -85,8 +126,10 @@
 
 /* fg 2.0 */
 #define DIFFERENCE_HWOCV_RTC		30
-#define DIFFERENCE_HWOCV_SWOCV		10
-#define DIFFERENCE_SWOCV_RTC		10
+//CEI comment start//
+#define DIFFERENCE_HWOCV_SWOCV		25 //MTK ORG=10
+#define DIFFERENCE_SWOCV_RTC		30 //MTK ORG=10
+//CEI comment end//
 #define DIFFERENCE_HWOCV_VBAT		30
 #define DIFFERENCE_VBAT_RTC			30
 #define DIFFERENCE_SWOCV_RTC_POS	15
@@ -95,11 +138,15 @@
 #define DIFFERENCE_VOLTAGE_UPDATE	20
 #define AGING1_LOAD_SOC	70
 #define AGING1_UPDATE_SOC	30
-#define BATTERYPSEUDO100	95
+//CEI comment start//
+#define BATTERYPSEUDO100	99 //MTK ORG=95
+//CEI comment end//
 #if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
 #define BATTERYPSEUDO1 2
 #else
-#define BATTERYPSEUDO1 6
+//CEI comment start//
+#define BATTERYPSEUDO1 2 //MTK ORG=6
+//CEI comment end//
 #endif
 
 /* #define Q_MAX_BY_SYS */			/*8. Qmax variant by system drop voltage.*/
@@ -167,5 +214,13 @@
 #define CUST_TRACKINGEN			0	/* 0:disable, 1:enable */
 
 /* Multi battery */
-/* #define MTK_MULTI_BAT_PROFILE_SUPPORT */
+//CEI comment start//
+#define MTK_MULTI_BAT_PROFILE_SUPPORT //Enable for multiple battery
+//CEI comment end//
+
+/* #define CUSTOM_SOFT_CHARGE_30 */
+/* #define CUSTOM_INVALID_SOFT_CHARGER_DETECT */
+
+#define TRK_POINT_EN 1
+#define TRK_POINT_THR 5
 #endif

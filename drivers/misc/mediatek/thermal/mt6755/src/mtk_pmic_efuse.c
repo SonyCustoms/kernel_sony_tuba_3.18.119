@@ -30,7 +30,13 @@
 /*=============================================================
  *Local variable definition
  *=============================================================*/
+//CEI comments start//
+#if 0 //MTK_ORG
 int mtktspmic_debug_log = 0;
+#else
+int mtktspmic_debug_log = 1;
+#endif
+//CEI comments end//
 int mtktstsx_debug_log = 0;
 /* Cali */
 static __s32 g_o_vts;

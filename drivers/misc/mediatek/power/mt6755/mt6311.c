@@ -1,16 +1,3 @@
-/*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
-
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -7260,8 +7247,7 @@ static ssize_t store_mt6311_access(struct device *dev, struct device_attribute *
 		pvalue = (char *)buf;
 		if (size > 5) {
 			addr = strsep(&pvalue, " ");
-			if (addr)
-				ret = kstrtou32(addr, 16, (unsigned int *)&reg_address);
+			ret = kstrtou32(addr, 16, (unsigned int *)&reg_address);
 		} else
 			ret = kstrtou32(pvalue, 16, (unsigned int *)&reg_address);
 		/*ret = kstrtoul(buf, 16, (unsigned long *)&reg_address);*/
@@ -7269,8 +7255,7 @@ static ssize_t store_mt6311_access(struct device *dev, struct device_attribute *
 		if (size > 5) {
 			/*reg_value = simple_strtoul((pvalue + 1), NULL, 16);*/
 			val =  strsep(&pvalue, " ");
-			if (val)
-				ret = kstrtou32(val, 16, (unsigned int *)&reg_value);
+			ret = kstrtou32(val, 16, (unsigned int *)&reg_value);
 			pr_err("[store_mt6311_access] write mt6311 reg 0x%x with value 0x%x !\n",
 				reg_address, reg_value);
 

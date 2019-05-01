@@ -37,7 +37,13 @@
 /* #define MAX_CHARGING_TIME             1*60*60         // 1hr */
 /* #define MAX_CHARGING_TIME                   8*60*60   // 8hr */
 /* #define MAX_CHARGING_TIME                   12*60*60  // 12hr */
-#define MAX_CHARGING_TIME                   (24*60*60)	/* 24hr */
+
+//CEI comments start//
+//Safety_timer
+//#define MAX_CHARGING_TIME                   (24*60*60)	/* 24hr */
+#define MAX_CHARGING_TIME                   (8*60*60)  // 8hr for AC charger
+#define PC_MAX_CHARGING_TIME             (20*60*60)  //20hr for PC charger
+//CEI comments end//
 
 #define MAX_POSTFULL_SAFETY_TIME		(1*30*60)/* 30mins */
 #define MAX_PreCC_CHARGING_TIME		(1*30*60)/* 0.5hr */
@@ -134,18 +140,19 @@ typedef enum {
 	TEMP_ABOVE_POS_60
 } temp_state_enum;
 
+//CEI comment start//
+//JEITA enable
+#define TEMP_POS_60_THRESHOLD  57
+#define TEMP_POS_60_THRES_MINUS_X_DEGREE 55
 
-#define TEMP_POS_60_THRESHOLD  50
-#define TEMP_POS_60_THRES_MINUS_X_DEGREE 47
+#define TEMP_POS_45_THRESHOLD  42
+#define TEMP_POS_45_THRES_MINUS_X_DEGREE 40
 
-#define TEMP_POS_45_THRESHOLD  45
-#define TEMP_POS_45_THRES_MINUS_X_DEGREE 39
+#define TEMP_POS_10_THRESHOLD  13
+#define TEMP_POS_10_THRES_PLUS_X_DEGREE 15
 
-#define TEMP_POS_10_THRESHOLD  10
-#define TEMP_POS_10_THRES_PLUS_X_DEGREE 16
-
-#define TEMP_POS_0_THRESHOLD  0
-#define TEMP_POS_0_THRES_PLUS_X_DEGREE 6
+#define TEMP_POS_0_THRESHOLD  3
+#define TEMP_POS_0_THRES_PLUS_X_DEGREE 5
 
 #ifdef CONFIG_MTK_FAN5405_SUPPORT
 #define TEMP_NEG_10_THRESHOLD  0
@@ -154,8 +161,9 @@ typedef enum {
 #define TEMP_NEG_10_THRESHOLD  0
 #define TEMP_NEG_10_THRES_PLUS_X_DEGREE  0
 #else
-#define TEMP_NEG_10_THRESHOLD  0
-#define TEMP_NEG_10_THRES_PLUS_X_DEGREE  0
+#define TEMP_NEG_10_THRESHOLD  3
+#define TEMP_NEG_10_THRES_PLUS_X_DEGREE  5
+//CEI comment end//
 #endif
 
 /*****************************************************************************
@@ -187,7 +195,13 @@ typedef unsigned char  BOOL;
   #define TRUE  (1)
 #endif
 
-
+typedef enum {
+	CHK_SC30_DATA_NONE = 0,
+	CHK_SC30_DATA_REQUEST,
+	CHK_SC30_DATA_DONE_RESET,
+	CHK_SC30_DATA_DONE_NOT_RESET,
+	CHK_SC30_DATA_ERROR
+} batt_chk_SC30_data_staus_enum;
 
 /*****************************************************************************
  *  structure
@@ -204,7 +218,6 @@ typedef struct {
 	signed int charger_protect_status;
 	signed int ICharging;
 	signed int IBattery;
-	signed int CURRENT_NOW;
 	signed int temperature;
 	signed int temperatureR;
 	signed int temperatureV;
@@ -319,6 +332,14 @@ struct battery_custom_data {
 	int ta_9v_support;
 };
 
+typedef struct {
+	unsigned int time_A;
+	unsigned int time_B;
+	unsigned int time_C;
+	unsigned int time_T;
+	unsigned int low_cv;
+} SC30_TimeStruct;
+
 /*****************************************************************************
  *  Extern Variable
  ****************************************************************************/
@@ -335,7 +356,16 @@ extern kal_bool ta_cable_out_occur;
 extern kal_bool is_ta_connect;
 extern struct wake_lock TA_charger_suspend_lock;
 #endif
-extern bool gDisableGM;
+
+extern SC30_TimeStruct sc30_daemon_time;
+extern kal_bool get_SC30_daemon_time;
+extern unsigned int time_A;
+extern unsigned int time_B;
+extern unsigned int time_C;
+extern unsigned int time_T;
+extern unsigned int low_cv;
+extern unsigned int sc30_en;
+extern unsigned int chk_sc30_data_status;
 
 /*****************************************************************************
  *  Extern Function
@@ -390,7 +420,7 @@ extern PMU_STATUS do_jeita_state_machine(void);
 #ifdef CONFIG_MTK_POWER_EXT_DETECT
 extern kal_bool bat_is_ext_power(void);
 #endif
-extern signed int gFG_capacity_by_c;
+
 extern int g_platform_boot_mode;
 extern bool mt_usb_is_device(void);
 #if defined(CONFIG_USB_MTK_HDRC) || defined(CONFIG_USB_MU3D_DRV)

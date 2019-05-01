@@ -92,9 +92,7 @@
 #include "mtk_pep_intf.h"
 #include "mtk_pep20_intf.h"
 
-#ifdef CONFIG_TCPC_CLASS
-#include "tcpm.h"
-#endif
+#include <linux/switch.h>
 
 #if defined(CONFIG_MTK_PUMP_EXPRESS_SUPPORT) || defined(CONFIG_MTK_PUMP_EXPRESS_PLUS_SUPPORT)
 #ifndef PUMP_EXPRESS_SERIES
@@ -145,7 +143,10 @@ static char *DISO_state_s[8] = {
 /* // Thermal related flags */
 /* ///////////////////////////////////////////////////////////////////////////////////////// */
 /* 0:nothing, 1:enable batTT&chrTimer, 2:disable batTT&chrTimer, 3:enable batTT, disable chrTimer */
-int g_battery_thermal_throttling_flag = 3;
+//CEI comment start//
+//Safety_timer
+int g_battery_thermal_throttling_flag = 1; //MTK ORG = 3
+//CEI comment end//
 int battery_cmd_thermal_test_mode = 0;
 int battery_cmd_thermal_test_mode_value = 0;
 int g_battery_tt_check_flag = 0;	/* 0:default enable check batteryTT, 1:default disable check batteryTT */
@@ -188,6 +189,29 @@ struct battery_custom_data batt_cust_data;
 int pending_wake_up_bat;
 
 int cable_in_uevent = 0;
+
+#ifdef CUSTOM_SOFT_CHARGE_30
+SC30_TimeStruct sc30_daemon_time;
+kal_bool sc30_en = KAL_TRUE;
+unsigned int time_A;
+unsigned int time_B;
+unsigned int time_C;
+unsigned int time_T;
+unsigned int low_cv;
+#define TIME_FACTOR_A 832	/*time factor A 1/8.32 */
+#define TIME_FACTOR_B 273	/*time factor A 1/2.73 */
+#define TIME_FACTOR_C 161	/*time factor A 1/1.61 */
+#define SC30_TIME_THRESHOLD (60 * 60 * 250) /*250 hours*/
+kal_bool get_SC30_daemon_time = KAL_FALSE;
+batt_chk_SC30_data_staus_enum chk_sc30_data_status = CHK_SC30_DATA_NONE;
+#endif
+
+#ifdef CUSTOM_INVALID_SOFT_CHARGER_DETECT
+static struct switch_dev invaliddev;
+int swith_reg_ret = 1;
+int invalid_chr_state;
+#endif
+
 /* ////////////////////////////////////////////////////////////////////////////// */
 /* Integrate with NVRAM */
 /* ////////////////////////////////////////////////////////////////////////////// */
@@ -250,15 +274,18 @@ unsigned char fg_ipoh_reset;
 static struct workqueue_struct *battery_init_workqueue;
 static struct work_struct battery_init_work;
 
-#ifdef CONFIG_TCPC_CLASS
-static struct tcpc_device *tcpc_dev;
+#ifdef CONFIG_CHARGER_QNS
+/* Battery type name */
+#define BATTERY_TYPE_NAME_SEND "1298-9239"
+#define BATTERY_TYPE_NAME_ATL "1298-9240"
+#define BATTERY_TYPE_NAME_DEFAULT "Dummy"
 #endif
 
 /* ////////////////////////////////////////////////////////////////////////////// */
 /* FOR ADB CMD */
 /* ////////////////////////////////////////////////////////////////////////////// */
 /* Dual battery */
-int g_status_smb = POWER_SUPPLY_STATUS_DISCHARGING;
+int g_status_smb = POWER_SUPPLY_STATUS_NOT_CHARGING;
 int g_capacity_smb = 50;
 int g_present_smb = 0;
 /* ADB charging CMD */
@@ -292,10 +319,29 @@ struct battery_data {
 	int BAT_PRESENT;
 	int BAT_TECHNOLOGY;
 	int BAT_CAPACITY;
-	int BAT_CURRENT_NOW;
 	/* Add for Battery Service */
 	int BAT_batt_vol;
 	int BAT_batt_temp;
+	/* Add for EM */
+	int BAT_TemperatureR;
+	int BAT_TempBattVoltage;
+	int BAT_InstatVolt;
+	int BAT_BatteryAverageCurrent;
+	int BAT_BatterySenseVoltage;
+	int BAT_ISenseVoltage;
+	int BAT_ChargerVoltage;
+//CEI comment start//
+//Prevent swelling
+	int enable_llk;
+//CEI comment end//
+	/* Dual battery */
+	int status_smb;
+	int capacity_smb;
+	int present_smb;
+	int adjust_power;
+#ifdef CONFIG_CHARGER_QNS
+	int qns_max_charge_current;
+#endif
 };
 
 static enum power_supply_property wireless_props[] = {
@@ -308,9 +354,6 @@ static enum power_supply_property ac_props[] = {
 
 static enum power_supply_property usb_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
-	POWER_SUPPLY_PROP_CURRENT_MAX,
-	POWER_SUPPLY_PROP_VOLTAGE_MAX,
-	POWER_SUPPLY_PROP_CHARGE_COUNTER
 };
 
 static enum power_supply_property battery_props[] = {
@@ -319,16 +362,38 @@ static enum power_supply_property battery_props[] = {
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_CAPACITY,
-	/*charging current*/
-	POWER_SUPPLY_PROP_CURRENT_NOW,
-	/*battery voltage*/
-	POWER_SUPPLY_PROP_VOLTAGE_NOW,
-	POWER_SUPPLY_PROP_CYCLE_COUNT,
-	POWER_SUPPLY_PROP_CHARGE_AVG,
+#ifdef CONFIG_CHARGER_QNS
+	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
-	POWER_SUPPLY_PROP_CHARGE_COUNTER,
-	/*battery temperature*/
-	POWER_SUPPLY_PROP_TEMP
+	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_TEMP,
+#endif
+	/* Add for Battery Service */
+	POWER_SUPPLY_PROP_batt_vol,
+	POWER_SUPPLY_PROP_batt_temp,
+	/* Add for EM */
+	POWER_SUPPLY_PROP_TemperatureR,
+	POWER_SUPPLY_PROP_TempBattVoltage,
+	POWER_SUPPLY_PROP_InstatVolt,
+	POWER_SUPPLY_PROP_BatteryAverageCurrent,
+	POWER_SUPPLY_PROP_BatterySenseVoltage,
+	POWER_SUPPLY_PROP_ISenseVoltage,
+	POWER_SUPPLY_PROP_ChargerVoltage,
+//CEI comment start//
+//Prevent swelling
+	POWER_SUPPLY_PROP_ENABLE_LLK,
+//CEI comment end//
+	/* Dual battery */
+	POWER_SUPPLY_PROP_status_smb,
+	POWER_SUPPLY_PROP_capacity_smb,
+	POWER_SUPPLY_PROP_present_smb,
+	/* ADB CMD Discharging */
+	POWER_SUPPLY_PROP_adjust_power,
+#ifdef CONFIG_CHARGER_QNS
+	POWER_SUPPLY_PROP_MAX_CHARGE_CURRENT,
+	POWER_SUPPLY_PROP_BATTERY_TYPE,
+#endif
 };
 
 struct timespec batteryThreadRunTime;
@@ -388,9 +453,6 @@ int get_charger_detect_status(void)
 {
 	kal_bool chr_status;
 
-	if (battery_charging_control == NULL)
-		return KAL_FALSE;
-
 	battery_charging_control(CHARGING_CMD_GET_CHARGER_DET_STATUS, &chr_status);
 	return chr_status;
 }
@@ -408,11 +470,6 @@ kal_bool bat_is_ext_power(void)
 /* ///////////////////////////////////////////////////////////////////////////////////////// */
 /* // PMIC PCHR Related APIs */
 /* ///////////////////////////////////////////////////////////////////////////////////////// */
-int __attribute__((weak)) mtk_chr_reset_aicr_upper_bound(void)
-{
-	return 0;
-}
-
 kal_bool upmu_is_chr_det(void)
 {
 #if !defined(CONFIG_POWER_EXT)
@@ -460,11 +517,6 @@ kal_bool upmu_is_chr_det(void)
 }
 EXPORT_SYMBOL(upmu_is_chr_det);
 
-void __attribute__ ((weak))
-	battery_disable_batfet(void)
-{
-	pr_notice("battery_disable_batfet do not implement");
-}
 
 void wake_up_bat(void)
 {
@@ -506,6 +558,11 @@ static ssize_t bat_log_write(struct file *filp, const char __user *buff, size_t 
 	} else if (proc_bat_data == '2') {
 		battery_log(BAT_LOG_CRTI, "enable battery driver log system:2\n");
 		Enable_BATDRV_LOG = 2;
+//CEI comment start//
+	} else if (proc_bat_data == '3') {
+		battery_log(BAT_LOG_CRTI, "enable battery driver log system:3\n");
+		Enable_BATDRV_LOG = 3;
+//CEI comment end//
 	} else {
 		battery_log(BAT_LOG_CRTI, "Disable battery driver log system\n");
 		Enable_BATDRV_LOG = 0;
@@ -595,16 +652,6 @@ static int usb_get_property(struct power_supply *psy,
 		val->intval = data->USB_ONLINE;
 #endif
 		break;
-	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
-		val->intval = 5000000;
-		break;
-	case POWER_SUPPLY_PROP_CURRENT_MAX:
-		val->intval = 500000;
-		break;
-	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
-		val->intval = battery_meter_get_QMAX25() * 1000;
-		/* QMAX from battery, ma to ua */
-		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -612,10 +659,23 @@ static int usb_get_property(struct power_supply *psy,
 	return ret;
 }
 
+#ifdef CONFIG_CHARGER_QNS
+int set_bat_charging_current_level(int ma)
+{
+	battery_charging_control(CHARGING_CMD_SET_CURRENT, &ma);
+	return 0;
+}
+
+int battery_get_qns_current(void);
+#endif
+
 static int battery_get_property(struct power_supply *psy,
 				enum power_supply_property psp, union power_supply_propval *val)
 {
 	int ret = 0;
+#ifdef CONFIG_CHARGER_QNS
+	int id = 0;
+#endif
 	struct battery_data *data = container_of(psy, struct battery_data, psy);
 
 	switch (psp) {
@@ -634,31 +694,84 @@ static int battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CAPACITY:
 		val->intval = data->BAT_CAPACITY;
 		break;
+#ifdef CONFIG_CHARGER_QNS
+	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
+		val->intval = battery_meter_get_design_qmax();
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_FULL:
+		val->intval = battery_meter_get_qmax();
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		val->intval = battery_meter_get_battery_current_now()/10;
+		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		val->intval = data->BAT_batt_vol * 1000;
+		val->intval = data->BAT_BatterySenseVoltage;
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
 		val->intval = data->BAT_batt_temp;
 		break;
-	case POWER_SUPPLY_PROP_CURRENT_NOW:
-		val->intval = data->BAT_CURRENT_NOW;
-		/* charge_current */
+#endif
+	case POWER_SUPPLY_PROP_batt_vol:
+		val->intval = data->BAT_batt_vol;
 		break;
-	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
-		val->intval = data->BAT_CAPACITY * battery_meter_get_QMAX25() * 10;
-		/* remaining capacity,uah , (ui*qmax*1000/100)*/
+	case POWER_SUPPLY_PROP_batt_temp:
+		val->intval = data->BAT_batt_temp;
 		break;
-	case POWER_SUPPLY_PROP_CYCLE_COUNT:
-		val->intval = 0;
-		/*battery cycle return 0  */
+	case POWER_SUPPLY_PROP_TemperatureR:
+		val->intval = data->BAT_TemperatureR;
 		break;
-	case POWER_SUPPLY_PROP_CHARGE_AVG:
-		val->intval = data->BAT_CURRENT_NOW; /* charge_current */
+	case POWER_SUPPLY_PROP_TempBattVoltage:
+		val->intval = data->BAT_TempBattVoltage;
 		break;
-	case POWER_SUPPLY_PROP_CHARGE_FULL:
-		val->intval = battery_meter_get_QMAX25() * 1000;
-		/* QMAX from battery uah */
+	case POWER_SUPPLY_PROP_InstatVolt:
+		val->intval = data->BAT_InstatVolt;
 		break;
+	case POWER_SUPPLY_PROP_BatteryAverageCurrent:
+		val->intval = data->BAT_BatteryAverageCurrent;
+		break;
+	case POWER_SUPPLY_PROP_BatterySenseVoltage:
+		val->intval = data->BAT_BatterySenseVoltage;
+		break;
+	case POWER_SUPPLY_PROP_ISenseVoltage:
+		val->intval = data->BAT_ISenseVoltage;
+		break;
+	case POWER_SUPPLY_PROP_ChargerVoltage:
+		val->intval = data->BAT_ChargerVoltage;
+		break;
+//CEI comment start//
+//Prevent swelling
+	case POWER_SUPPLY_PROP_ENABLE_LLK:
+		val->intval = data->enable_llk;
+		break;
+//CEI comment end//
+		/* Dual battery */
+	case POWER_SUPPLY_PROP_status_smb:
+		val->intval = data->status_smb;
+		break;
+	case POWER_SUPPLY_PROP_capacity_smb:
+		val->intval = data->capacity_smb;
+		break;
+	case POWER_SUPPLY_PROP_present_smb:
+		val->intval = data->present_smb;
+		break;
+	case POWER_SUPPLY_PROP_adjust_power:
+		val->intval = data->adjust_power;
+		break;
+#ifdef CONFIG_CHARGER_QNS
+	case POWER_SUPPLY_PROP_MAX_CHARGE_CURRENT:
+		val->intval = battery_get_qns_current();
+		break;
+	case POWER_SUPPLY_PROP_BATTERY_TYPE:
+		id = battery_meter_get_battery_id();
+		if (id == 0)
+			val->strval = BATTERY_TYPE_NAME_ATL;
+		else if (id == 1)
+			val->strval = BATTERY_TYPE_NAME_SEND;
+		else
+			val->strval = BATTERY_TYPE_NAME_DEFAULT;
+		break;
+#endif
+
 	default:
 		ret = -EINVAL;
 		break;
@@ -666,6 +779,57 @@ static int battery_get_property(struct power_supply *psy,
 
 	return ret;
 }
+
+//CEI comment start//
+//Prevent swelling
+static int battery_set_property(struct power_supply *psy,
+				       enum power_supply_property psp, const union power_supply_propval *val)
+{
+	struct battery_data *data = container_of(psy, struct battery_data, psy);
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ENABLE_LLK:
+		data->enable_llk = val->intval;
+		battery_log(BAT_LOG_CRTI, "LE(K)=> battery_set_property: enable_llk=%d\n", data->enable_llk);
+		break;
+#ifdef CONFIG_CHARGER_QNS
+	case POWER_SUPPLY_PROP_MAX_CHARGE_CURRENT:
+		data->qns_max_charge_current = val->intval;
+		break;
+#endif
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int battery_property_is_writeable(struct power_supply *psy,
+			enum power_supply_property psp)
+{
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ENABLE_LLK:
+		return 1;
+	case POWER_SUPPLY_PROP_MAX_CHARGE_CURRENT:
+		return 1;
+	default:
+		break;
+	}
+
+	return 0;
+}
+//CEI comment end//
+
+#ifdef CUSTOM_INVALID_SOFT_CHARGER_DETECT
+void ICO_change_state(int invalid)
+{
+	battery_log(BAT_LOG_CRTI, "ICO_change_state invalid=%d\n", invalid);
+	if (swith_reg_ret == 0 && invalid_chr_state != invalid) {
+		switch_set_state((struct switch_dev *)&invaliddev, invalid);
+		invalid_chr_state = invalid;
+	}
+}
+#endif
 
 /* wireless_data initialization */
 static struct wireless_data wireless_main = {
@@ -711,6 +875,11 @@ static struct battery_data battery_main = {
 		.properties = battery_props,
 		.num_properties = ARRAY_SIZE(battery_props),
 		.get_property = battery_get_property,
+//CEI comment start//
+//Prevent swelling
+		.set_property = battery_set_property,
+		.property_is_writeable = battery_property_is_writeable,
+//CEI comment end//
 		},
 /* CC: modify to have a full power supply status */
 #if defined(CONFIG_POWER_EXT)
@@ -721,8 +890,18 @@ static struct battery_data battery_main = {
 	.BAT_CAPACITY = 100,
 	.BAT_batt_vol = 4200,
 	.BAT_batt_temp = 22,
+//CEI comment start//
+//Prevent swelling
+	.enable_llk = 0,
+//CEI comment end//
+	/* Dual battery */
+	.status_smb = POWER_SUPPLY_STATUS_NOT_CHARGING,
+	.capacity_smb = 50,
+	.present_smb = 0,
+	/* ADB CMD discharging */
+	.adjust_power = -1,
 #else
-	.BAT_STATUS = POWER_SUPPLY_STATUS_DISCHARGING,
+	.BAT_STATUS = POWER_SUPPLY_STATUS_NOT_CHARGING,
 	.BAT_HEALTH = POWER_SUPPLY_HEALTH_GOOD,
 	.BAT_PRESENT = 1,
 	.BAT_TECHNOLOGY = POWER_SUPPLY_TECHNOLOGY_LION,
@@ -733,8 +912,31 @@ static struct battery_data battery_main = {
 #endif
 	.BAT_batt_vol = 0,
 	.BAT_batt_temp = 0,
+//CEI comment start//
+//Prevent swelling
+	.enable_llk = 0,
+//CEI comment end//
+	/* Dual battery */
+	.status_smb = POWER_SUPPLY_STATUS_NOT_CHARGING,
+	.capacity_smb = 50,
+	.present_smb = 0,
+	/* ADB CMD discharging */
+	.adjust_power = -1,
+#ifdef CONFIG_CHARGER_QNS
+	.qns_max_charge_current = 0,
+#endif
 #endif
 };
+
+#ifdef CONFIG_CHARGER_QNS
+int battery_get_qns_current(void)
+{
+       if (battery_main.BAT_STATUS  != POWER_SUPPLY_STATUS_CHARGING) {
+               battery_main.qns_max_charge_current = 0;
+       }
+       return battery_main.qns_max_charge_current;
+}
+#endif
 
 void mt_battery_set_init_vol(int init_voltage)
 {
@@ -1625,14 +1827,280 @@ static ssize_t store_Pump_Express(struct device *dev, struct device_attribute *a
 static DEVICE_ATTR(Pump_Express, 0664, show_Pump_Express, store_Pump_Express);
 
 
+#ifdef CUSTOM_SOFT_CHARGE_30
+static ssize_t show_SC30_Status(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	battery_log(BAT_LOG_CRTI, "show_SC30_Status: en=%d TA=%d, TB=%d, TC=%d, TT=%d, low_cv=%d\n",
+		sc30_en, time_A, time_B, time_C, time_T, low_cv);
+
+	return sprintf(buf, "SC30 en=%d TA=%d, TB=%d, TC=%d, TT=%d, low_cv=%d\n",
+		sc30_en, time_A, time_B, time_C, time_T, low_cv);
+}
+
+static ssize_t store_SC30_Status(struct device *dev, struct device_attribute *attr,
+				  const char *buf, size_t size)
+{
+	if (sscanf(buf, "%u %u %u %u %u", &time_A, &time_B, &time_C, &time_T, &low_cv) == 5) {
+		battery_log(BAT_LOG_CRTI, "store_SC30_Status: TA=%d, TB=%d, TC=%d, TT=%d, low_cv=%d\n",
+			time_A, time_B, time_C, time_T, low_cv);
+		chk_sc30_data_status = CHK_SC30_DATA_REQUEST;
+		/*wakeup_fg_algo(FG_SAVE_CHECK_SC30_TIME);*/
+	} else
+		battery_log(BAT_LOG_CRTI, "store_SC30_Status, argument ERROR\n");
+
+	return size;
+}
+
+static DEVICE_ATTR(SC30_Status, 0664, show_SC30_Status, store_SC30_Status);
+
+
+static ssize_t show_SC30_En(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "SC30 en=%d TA=%d, TB=%d, TC=%d, low_cv=%d\n", sc30_en, time_A, time_B, time_C, low_cv);
+}
+
+static ssize_t store_SC30_En(struct device *dev, struct device_attribute *attr,
+				  const char *buf, size_t size)
+{
+	if (kstrtouint(buf, 10, &sc30_en) == 0) {
+		if (sc30_en != KAL_FALSE)
+			sc30_en = KAL_TRUE;
+
+		battery_log(BAT_LOG_CRTI, "store_SC30_En: set sc30_en=%d\n",
+			sc30_en);
+
+	} else
+		battery_log(BAT_LOG_CRTI, "store_SC30_En, argument ERROR\n");
+
+	return size;
+}
+
+static DEVICE_ATTR(SC30_En, 0664, show_SC30_En, store_SC30_En);
+
+static ssize_t show_Chk_SC30_Data(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", chk_sc30_data_status);
+}
+
+static ssize_t store_Chk_SC30_Data(struct device *dev, struct device_attribute *attr,
+				  const char *buf, size_t size)
+{
+	if (kstrtouint(buf, 10, &chk_sc30_data_status) == 0) {
+		battery_log(BAT_LOG_CRTI, "store_Chk_SC30_Data: set chk_sc30_data_status=%d\n",
+			chk_sc30_data_status);
+	} else
+		battery_log(BAT_LOG_CRTI, "store_Chk_SC30_Data, argument ERROR\n");
+
+	return size;
+}
+
+static DEVICE_ATTR(Chk_SC30_Data, 0664, show_Chk_SC30_Data, store_Chk_SC30_Data);
+#endif /* CUSTOM_SOFT_CHARGE_30 */
+
+//CEI comment start//
+//#include <mach/mt_battery_meter_table.h>
+extern unsigned int g_fg_battery_id;
+
+signed int cei_voltage_buffer[10] = {0};
+
+extern int board_type_with_hw_id(void);
+signed int voltage_base_get_zcv(signed int *batt_ocv);
+extern signed int cei_voltage_base_get_zcv(signed int *batt_ocv);
+extern signed int cei_fgauge_read_capacity_by_v(signed int voltage);
+
+signed int find_closest_voltage_by_capacity(signed int capacity_soc)
+{
+	int init_volt = 3000;
+	int end_volt = 4360;
+	signed int capacity_read = 0;
+	signed int voltage_by_capacity = 0;
+	int i = 0;
+
+	int test_count = (end_volt - init_volt/10) + 1; //10mv for a step
+
+	for(i = 0; i < test_count; i++)
+	{
+		capacity_read = cei_fgauge_read_capacity_by_v(3000+ i*10);
+		if (capacity_read >= capacity_soc)
+		{
+			voltage_by_capacity = 3000+ ((i - 1) * 10);
+			break;
+		}
+	}
+
+	return voltage_by_capacity;
+}
+
+void cei_init_voltage_buffer(int input_voltage)
+{
+	int i = 0;
+
+	for(i = 0; i < 10; i++)
+		cei_voltage_buffer[i] = input_voltage;
+}
+
+signed int cei_add_voltage_buffer(int input_voltage)
+{
+	int sum = 0;
+	signed int avg_voltage = 0;
+	int i = 0;
+
+	for(i = 0; i < 9; i++) // index 0 ~ 8, 9 elements
+		cei_voltage_buffer[i] = cei_voltage_buffer[i + 1];
+
+	cei_voltage_buffer[9] = input_voltage;
+
+	for(i = 0; i < 10; i++)
+	{
+		sum = sum + cei_voltage_buffer[i];
+	}
+
+	avg_voltage = sum / 10;
+
+	battery_log(BAT_LOG_CRTI, "LE(K)=> cei_add_voltage_buffer %d %d %d %d %d\n",
+		cei_voltage_buffer[0], cei_voltage_buffer[1], cei_voltage_buffer[2], cei_voltage_buffer[3], cei_voltage_buffer[4]);
+
+	battery_log(BAT_LOG_CRTI, "LE(K)=> cei_add_voltage_buffer %d %d %d %d %d\n",
+		cei_voltage_buffer[5], cei_voltage_buffer[6], cei_voltage_buffer[7], cei_voltage_buffer[8], cei_voltage_buffer[9]);
+
+	battery_log(BAT_LOG_CRTI, "LE(K)=> cei_add_voltage_buffer avg_voltage = %d\n", avg_voltage);
+
+	return avg_voltage;
+}
+//CEI comment end//
+
+//CEI comment start//
+#include <mt-plat/battery_meter_hal.h>
+extern BATTERY_METER_CONTROL battery_meter_ctrl;
+int is_charger_exist_and_charging(void)
+{
+#if 1 //MTK provided condition
+    int gFG_is_charging = 0;
+
+    if (battery_meter_ctrl != NULL)
+	battery_meter_ctrl(BATTERY_METER_CMD_GET_HW_FG_CURRENT_SIGN, &gFG_is_charging);
+
+    if(BMT_status.charger_exist == KAL_TRUE && gFG_is_charging ==1)
+        return 1;
+    else
+        return 0;
+#else // CEI modification's condition
+    kal_bool chgfull_status = KAL_FALSE;
+
+    battery_charging_control(CHARGING_CMD_GET_CHARGING_STATUS, &chgfull_status);
+
+    if( (BMT_status.charger_exist == KAL_TRUE) && (chgfull_status ==KAL_FALSE) )
+        return 1;
+    else
+        return 0;
+#endif
+}
+//CEI comment end//
+
+//CEI comment start//
+//99%<->100% reqirement
+int chg_ever_full = 0;
+//CEI comment end//
 
 static void mt_battery_update_EM(struct battery_data *bat_data)
 {
-	bat_data->BAT_CAPACITY = BMT_status.UI_SOC2;
-	bat_data->BAT_CURRENT_NOW = BMT_status.CURRENT_NOW * 100; /* 0.1mA to uA */
+//CEI comment start//
+	signed int capacity_by_v;
+	signed int voltage_by_soc2;
+//	signed int batt_voltage = 4000;
+	signed avg_voltage = 0;
+	static signed int pre_UISOC2 = -1;
+	static int TARGET_SOC = 50;
+	static int PRESENT_SOC = 50;
+	static int FIRST_SOC = 50;
+//	signed int ret = 0;
+	
+	int board_type = board_type_with_hw_id();
+
+	if(board_type == 0x1)
+	{
+		if(pre_UISOC2 == -1)
+		{
+				pre_UISOC2 = BMT_status.UI_SOC2;
+				voltage_by_soc2 = find_closest_voltage_by_capacity(pre_UISOC2);
+				cei_init_voltage_buffer(voltage_by_soc2);
+
+				TARGET_SOC = pre_UISOC2;
+				PRESENT_SOC = pre_UISOC2;
+				FIRST_SOC = PRESENT_SOC;
+				battery_log(BAT_LOG_CRTI, "LE(K)=> mt_battery_update_EM voltage_by_soc2=%d, TARGET_SOC=%d, PRESENT_SOC=%d\n", voltage_by_soc2, TARGET_SOC, PRESENT_SOC);
+
+		}
+		else
+		{
+//				ret = cei_voltage_base_get_zcv(&batt_voltage);
+				avg_voltage = cei_add_voltage_buffer(BMT_status.bat_vol);
+				capacity_by_v = cei_fgauge_read_capacity_by_v(avg_voltage);
+
+				battery_log(BAT_LOG_CRTI, "LE(K)=> mt_battery_update_EM avg_voltage=%d, capacity_by_v=%d, FIRST_SOC=%d, TARGET_SOC=%d, PRESENT_SOC=%d\n", avg_voltage, capacity_by_v, FIRST_SOC, TARGET_SOC, PRESENT_SOC);
+
+				if(capacity_by_v < 0)
+					capacity_by_v = 0;
+				else if(capacity_by_v > 100)
+					capacity_by_v = 100;
+
+				TARGET_SOC = capacity_by_v;
+				if(PRESENT_SOC < TARGET_SOC)
+					PRESENT_SOC++;
+				else if (PRESENT_SOC > TARGET_SOC)
+					PRESENT_SOC--;
+
+				battery_log(BAT_LOG_CRTI, "LE(K)=> mt_battery_update_EM bat_data->BAT_CAPACITY=%d\n, TARGET_SOC=%d, PRESENT_SOC=%d\n", PRESENT_SOC, TARGET_SOC, PRESENT_SOC);
+
+		}
+
+		bat_data->BAT_CAPACITY = PRESENT_SOC;
+	}
+	else  //MTK original code
+	{
+//CEI comment start//
+//99%<->100% reqirement
+		//bat_data->BAT_CAPACITY = BMT_status.UI_SOC2;
+		int chg_ever_full_pre = chg_ever_full;
+		int bat_capacity_pre = bat_data->BAT_CAPACITY;
+
+		if(BMT_status.UI_SOC2 > 99 && BMT_status.bat_full == KAL_FALSE && chg_ever_full != 1)
+		{
+			bat_data->BAT_CAPACITY = 99;
+		}
+		else
+		{
+			bat_data->BAT_CAPACITY = BMT_status.UI_SOC2;
+		}
+
+		battery_log(BAT_LOG_CRTI, "LE(K)=> mt_battery_update_EM: BAT_CAPACITY=%d, cap_pre = %d, UI_SOC2=%d, bat_full=%d, ever_full=%d, ever_full_pre=%d\n",
+				bat_data->BAT_CAPACITY, bat_capacity_pre, BMT_status.UI_SOC2, BMT_status.bat_full, chg_ever_full, chg_ever_full_pre);
+//CEI comment end//
+	}
+//CEI comment end//
+
+	bat_data->BAT_TemperatureR = BMT_status.temperatureR;	/* API */
+	bat_data->BAT_TempBattVoltage = BMT_status.temperatureV;	/* API */
+	bat_data->BAT_InstatVolt = BMT_status.bat_vol;	/* VBAT */
+	bat_data->BAT_BatteryAverageCurrent = BMT_status.ICharging;
+	bat_data->BAT_BatterySenseVoltage = BMT_status.bat_vol;
+	bat_data->BAT_ISenseVoltage = BMT_status.Vsense;	/* API */
+	bat_data->BAT_ChargerVoltage = BMT_status.charger_vol;
+	/* Dual battery */
+	bat_data->status_smb = g_status_smb;
+	bat_data->capacity_smb = g_capacity_smb;
+	bat_data->present_smb = g_present_smb;
+	battery_log(BAT_LOG_FULL, "status_smb = %d, capacity_smb = %d, present_smb = %d\n",
+		    bat_data->status_smb, bat_data->capacity_smb, bat_data->present_smb);
+
+//CEI comment start//
+//BAT_status_Full feature
+//	if ((BMT_status.UI_SOC2 == 100) && (BMT_status.charger_exist == KAL_TRUE)
+//	    && (BMT_status.bat_charging_state != CHR_ERROR)) //MTK ORG
 	if ((BMT_status.UI_SOC2 == 100) && (BMT_status.charger_exist == KAL_TRUE)
-	    && (BMT_status.bat_charging_state != CHR_ERROR))
+	    && (BMT_status.bat_charging_state != CHR_ERROR) && (bat_is_charging_full() == KAL_TRUE))
 		bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_FULL;
+//CEI comment end//
 
 #ifdef CONFIG_MTK_DISABLE_POWER_ON_OFF_VOLTAGE_LIMITATION
 	if (bat_data->BAT_CAPACITY <= 0)
@@ -1641,9 +2109,13 @@ static void mt_battery_update_EM(struct battery_data *bat_data)
 	battery_log(BAT_LOG_CRTI,
 		    "BAT_CAPACITY=1, due to define CONFIG_MTK_DISABLE_POWER_ON_OFF_VOLTAGE_LIMITATION\r\n");
 #endif
+
 }
 
-
+//CEI comment start//
+//BAT_status_Full feature, for charging issue debugging
+static int last_chg_status = POWER_SUPPLY_STATUS_UNKNOWN;
+//CEI comment end//
 
 static void battery_update(struct battery_data *bat_data)
 {
@@ -1669,20 +2141,44 @@ static void battery_update(struct battery_data *bat_data)
 
 	if ((BMT_status.charger_exist == KAL_TRUE) && (BMT_status.bat_charging_state != CHR_ERROR)) {
 		if (BMT_status.bat_exist) {
-			bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_CHARGING;
+//CEI comment start//
+//BAT_status_Full feature
+//			bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_CHARGING; //MTK ORG
+                       if ( (BMT_status.UI_SOC2 == 100)  && (bat_is_charging_full() == KAL_TRUE) )
+                               bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_FULL;
+                       else
+                               bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_CHARGING; //MTK original
+//CEI comment end//
 		} else {
 			/* No Battery, Only Charger */
 			bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_UNKNOWN;
 		}
 	} else {
 		/* Only Battery */
-		bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_DISCHARGING;
+		bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_NOT_CHARGING;
 	}
 
 	mt_battery_update_EM(bat_data);
 
+//CEI comment start//
+////BAT_status_Full feature, for charging issue debugging
+	if(last_chg_status != bat_data->BAT_STATUS)
+	{
+		battery_log(BAT_LOG_CRTI,
+				    "LE(K)=> BAT_STATUS: %d changed from %d, BMT_status.UI_SOC2=%d, BMT_status.charger_exist=%d\n", bat_data->BAT_STATUS, last_chg_status, BMT_status.UI_SOC2, BMT_status.charger_exist);
+		battery_log(BAT_LOG_CRTI,
+				    "LE(K)=> BAT_STATUS: BMT_status.bat_charging_state=%d, BMT_status.bat_exist=%d\n", BMT_status.bat_charging_state, BMT_status.bat_exist);
+	}
+	last_chg_status = bat_data->BAT_STATUS;
+//CEI comment end//
+
 	if (cmd_discharging == 1)
-		bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_DISCHARGING;
+		bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_CMD_DISCHARGING;
+
+	if (adjust_power != -1) {
+		bat_data->adjust_power = adjust_power;
+		battery_log(BAT_LOG_CRTI, "adjust_power=(%d)\n", adjust_power);
+	}
 
 #ifdef DLPT_POWER_OFF_EN
 #ifndef DISABLE_DLPT_FEATURE
@@ -1970,6 +2466,11 @@ unsigned long BAT_Get_Battery_Voltage(int polling_mode)
 	return ret_val;
 }
 
+//CEI comment start//
+//for BatteryAverageCurrent 
+// #define DEBUG_BATTERYAVERAGECURRENT
+kal_bool g_batteryBufferFirst = KAL_FALSE;
+//CEI comment end//
 
 static void mt_battery_average_method_init(BATTERY_AVG_ENUM type, unsigned int *bufferdata,
 					   unsigned int data, signed int *sum)
@@ -2037,6 +2538,14 @@ static void mt_battery_average_method_init(BATTERY_AVG_ENUM type, unsigned int *
 		*sum = data * BATTERY_AVERAGE_SIZE;
 	}
 
+//CEI comment start//
+//for BatteryAverageCurrent
+	if (type == BATTERY_AVG_CURRENT) {
+		if (batteryBufferFirst == KAL_TRUE)
+			g_batteryBufferFirst = KAL_TRUE;
+	}
+//CEI comment end//
+
 	index++;
 	if (index >= BATTERY_AVERAGE_DATA_NUMBER) {
 		index = BATTERY_AVERAGE_DATA_NUMBER;
@@ -2051,7 +2560,85 @@ static unsigned int mt_battery_average_method(BATTERY_AVG_ENUM type, unsigned in
 {
 	unsigned int avgdata;
 
+//CEI comment start//
+//for BatteryAverageCurrent 
+	static int counter = -1;
+	static unsigned int tempdata[BATTERY_AVERAGE_SIZE];
+//CEI comment end//
+
 	mt_battery_average_method_init(type, bufferdata, data, sum);
+
+//CEI comment start//
+//for BatteryAverageCurrent 
+	if(type == BATTERY_AVG_CURRENT)
+	{
+#ifdef DEBUG_BATTERYAVERAGECURRENT
+		battery_log(BAT_LOG_CRTI, "LE(K)=> g_batteryBufferFirst=%d, counter=%d, data=%d, sum=%d\n", g_batteryBufferFirst, counter, data, *sum);
+#endif
+	}
+
+	if(type == BATTERY_AVG_CURRENT)
+	{
+		int i = 0;
+		int special_sum = 0;
+		int avg_num = 0;
+
+		if(g_batteryBufferFirst == KAL_TRUE)
+		{
+			memset(tempdata, 0, BATTERY_AVERAGE_SIZE*(sizeof(unsigned int)));
+			counter = 0;
+			g_batteryBufferFirst = KAL_FALSE;
+		}
+		if(counter != -1)
+		{
+			if(counter < BATTERY_AVERAGE_SIZE)
+			{
+				tempdata[counter] = data;
+				for(i = 0; i <= counter; i++)
+				{
+					special_sum += tempdata[i];
+				}
+
+				if( (counter+1) != 0) // this will be true forever, prevent div0
+					avg_num = special_sum / (counter+1);
+
+#ifdef DEBUG_BATTERYAVERAGECURRENT
+battery_log(BAT_LOG_CRTI, "LE(K)=> special_sum=%d, avg_num=%d\n", special_sum, avg_num);
+#endif
+
+				for(i = 0; i < BATTERY_AVERAGE_SIZE; i++)
+				{
+					bufferdata[i] = avg_num;
+				}
+				*sum = avg_num * BATTERY_AVERAGE_SIZE;
+				counter++;
+			}
+			else // counter >= 30
+			{
+				counter = -1;
+			}
+		}
+	}
+
+#ifdef DEBUG_BATTERYAVERAGECURRENT
+	if(type == BATTERY_AVG_CURRENT)
+		{
+			int i;	
+				for(i = 0; i < (BATTERY_AVERAGE_SIZE/4); i++)
+				{
+					battery_log(BAT_LOG_CRTI, "LE(K) =>tempdata[%d]=%d, tempdata[%d]=%d, tempdata[%d]=%d, tempdata[%d]=%d\n", 4*i, tempdata[4*i], 4*i+1, tempdata[4*i+1], 4*i+2, tempdata[4*i+2], 4*i+3, tempdata[4*i+3]);
+				}
+	battery_log(BAT_LOG_CRTI, "LE(K)=> tempdata[%d]=%d, tempdata[%d]=%d\n", BATTERY_AVERAGE_SIZE-2, tempdata[BATTERY_AVERAGE_SIZE-2], BATTERY_AVERAGE_SIZE-1, tempdata[BATTERY_AVERAGE_SIZE-1]);
+	
+				for(i = 0; i < (BATTERY_AVERAGE_SIZE/4); i++)
+				{
+					battery_log(BAT_LOG_CRTI, "LE(K) =>bufferdata[%d]=%d, bufferdata[%d]=%d, bufferdata[%d]=%d, bufferdata[%d]=%d\n", 4*i, bufferdata[4*i], 4*i+1, bufferdata[4*i+1], 4*i+2, bufferdata[4*i+2], 4*i+3, bufferdata[4*i+3]);
+				}
+	battery_log(BAT_LOG_CRTI, "LE(K)=> bufferdata[%d]=%d, bufferdata[%d]=%d\n", BATTERY_AVERAGE_SIZE-2, bufferdata[BATTERY_AVERAGE_SIZE-2], BATTERY_AVERAGE_SIZE-1, bufferdata[BATTERY_AVERAGE_SIZE-1]);
+
+		}
+#endif		
+//CEI comment end//
 
 	*sum -= bufferdata[batteryIndex];
 	*sum += data;
@@ -2061,6 +2648,12 @@ static unsigned int mt_battery_average_method(BATTERY_AVG_ENUM type, unsigned in
 	battery_log(BAT_LOG_FULL, "bufferdata[%d]= (%d)\n", batteryIndex, bufferdata[batteryIndex]);
 	return avgdata;
 }
+
+//CEI comment start//
+//Add more charing related logs
+extern int car_value_rtc;
+extern int fgr;
+//CEI comment end//
 
 void mt_battery_GetBatteryData(void)
 {
@@ -2073,9 +2666,6 @@ void mt_battery_GetBatteryData(void)
 	static unsigned char batteryIndex = 0xff;
 	static signed int previous_SOC = -1;
 	kal_bool current_sign;
-#ifdef GM20_LOW_TEMP_SUPPORT
-	int rtc_tmp;
-#endif
 
 	if (batteryIndex == 0xff)
 		batteryIndex = 0;
@@ -2090,17 +2680,6 @@ void mt_battery_GetBatteryData(void)
 		charger_vol = 0;
 	}
 	temperature = battery_meter_get_battery_temperature();
-#ifdef GM20_LOW_TEMP_SUPPORT
-	rtc_tmp = get_rtc_spare_bat_temp_value();
-
-	if (temperature < rtc_tmp * 5 - 20)
-		set_rtc_spare_bat_temp_value((temperature + 20) / 5);
-
-	battery_log(BAT_LOG_CRTI, "rtc_tmp tmp:%d old_rtc:%d new_rtc:%d\n",
-		temperature,
-		rtc_tmp,
-		get_rtc_spare_bat_temp_value());
-#endif
 	temperatureV = battery_meter_get_tempV();
 	temperatureR = battery_meter_get_tempR(temperatureV);
 	ZCV = battery_meter_get_battery_zcv();
@@ -2140,7 +2719,6 @@ void mt_battery_GetBatteryData(void)
 	BMT_status.temperatureR = temperatureR;
 	BMT_status.ZCV = ZCV;
 	BMT_status.IBattery = battery_meter_get_battery_current();
-	BMT_status.CURRENT_NOW = BMT_status.IBattery;
 	current_sign = battery_meter_get_battery_current_sign();
 	BMT_status.IBattery *= (current_sign ? 1 : (-1));
 
@@ -2155,6 +2733,13 @@ void mt_battery_GetBatteryData(void)
 		BMT_status.charger_type, BMT_status.SOC, BMT_status.UI_SOC, BMT_status.UI_SOC2,
 		g_bcct_flag, get_usb_current_unlimited(), get_bat_charging_current_level() / 100,
 		BMT_status.IBattery / 10);
+
+//CEI comment start//
+//Add more charing related logs
+	battery_log(BAT_LOG_CRTI,
+			    "LE(K)=> APTB [kernel] mt_battery_GetBatteryData (V_BAT_SENSE)=%d, (V_I_SENSE)=%d, car_value_rtc=%d, fgr=%d\n", bat_vol, Vsense, car_value_rtc, fgr);
+//CEI comment end//
+
 }
 
 
@@ -2241,7 +2826,13 @@ static PMU_STATUS mt_battery_CheckChargingTime(void)
 
 	} else {
 		/* Charging OT */
-		if (BMT_status.total_charging_time >= MAX_CHARGING_TIME) {
+//CEI comments start//
+//Safety_timer
+//		if (BMT_status.total_charging_time >= MAX_CHARGING_TIME) {
+		if( (((BMT_status.charger_type == STANDARD_CHARGER) || (BMT_status.charger_type == APPLE_2_1A_CHARGER) ) && BMT_status.total_charging_time >= MAX_CHARGING_TIME) ||\
+			(((BMT_status.charger_type != STANDARD_CHARGER) && (BMT_status.charger_type != APPLE_2_1A_CHARGER)) && (BMT_status.total_charging_time >= PC_MAX_CHARGING_TIME)) )
+		{
+//CEI comments end//
 			battery_log(BAT_LOG_CRTI, "[BATTERY] Charging Over Time.\n");
 
 			status = PMU_STATUS_FAIL;
@@ -2264,6 +2855,63 @@ static PMU_STATUS mt_battery_CheckCallState(void)
 }
 #endif
 
+//CEI comment start//
+//Prevent swelling
+int battery_swelling_chg_check(void)
+{
+	struct battery_data *bat_data = &battery_main;
+
+	int batt_swelling_flag = -1;
+	static int last_batt_swelling_flag = -1;
+	int enable_chg = 1;
+	int battery_cap = 1;
+
+	if(bat_data != 0)
+	{
+		batt_swelling_flag = bat_data->enable_llk;
+		battery_cap = bat_data->BAT_CAPACITY;
+
+		if(batt_swelling_flag == 1)
+		{
+			BMT_status.total_charging_time = 0;
+
+			if(bat_data->BAT_CAPACITY <= 40)
+			{
+				enable_chg = 1;
+				if( (BMT_status.bat_charging_state != CHR_PRE) && (BMT_status.bat_charging_state != CHR_CC)) //reset charging state to  CHR_PRE for first time
+				{
+					battery_log(BAT_LOG_CRTI, "LE(K)=> SWELLING: BAT_CAPACITY<=40, BAT STATE=%d, set to CHR_PRE(%d) \n", BMT_status.bat_charging_state, CHR_PRE);
+					BMT_status.bat_charging_state = CHR_PRE;
+				}
+			}
+			else if(bat_data->BAT_CAPACITY >= 60)
+			{
+				enable_chg = 0;
+			}
+			else //BAT_CAPACITY: 41~59%
+			{
+				//Do nothing
+			}
+		}
+		else
+		{
+			enable_chg = 1;
+			if(last_batt_swelling_flag == 1)
+			{
+				battery_log(BAT_LOG_CRTI, "LE(K)=> SWELLING: batt_swelling_flag 1 -> 0, set to CHR_PRE\n");
+				BMT_status.bat_charging_state = CHR_PRE;
+			}
+		}
+	}
+
+	last_batt_swelling_flag = batt_swelling_flag;
+
+	battery_log(BAT_LOG_CRTI, "LE(K)=> SWELLING: enable_llk=%d, enable_chg=%d, cap=%d\n", batt_swelling_flag, enable_chg,  battery_cap);
+
+	return enable_chg;
+}
+//CEI comment end
+
 static void mt_battery_CheckBatteryStatus(void)
 {
 	battery_log(BAT_LOG_FULL, "[mt_battery_CheckBatteryStatus] cmd_discharging=(%d)\n",
@@ -2285,6 +2933,14 @@ static void mt_battery_CheckBatteryStatus(void)
 		return;
 	}
 
+//CEI comment start//
+//Prevent swelling
+	if (battery_swelling_chg_check() != 1) {
+		BMT_status.bat_charging_state = CHR_ERROR;
+		return;
+	}
+//CEI comment end
+
 	if (mt_battery_CheckChargerVoltage() != PMU_STATUS_OK) {
 		BMT_status.bat_charging_state = CHR_ERROR;
 		return;
@@ -2302,6 +2958,45 @@ static void mt_battery_CheckBatteryStatus(void)
 	}
 }
 
+#ifdef CUSTOM_INVALID_SOFT_CHARGER_DETECT
+static kal_bool mt_battery_CheckWeakInvalidCharger(void)
+{
+	kal_bool ret = KAL_FALSE;
+	/* Weak charger: is max current is less than 800 mA */
+	/* Invalid charger: D+, D- is not shorted or max current is less than 300 mA */
+	if ((g_aicr_upper_bound < 800) && (g_aicr_upper_bound > 0))
+		ret = KAL_TRUE;
+	else if (BMT_status.charger_type == NONSTANDARD_CHARGER ||
+		((g_aicr_upper_bound < 300) && (g_aicr_upper_bound > 0)))
+		ret = KAL_TRUE;
+
+	battery_log(BAT_LOG_CRTI, "[BATTERY] mt_battery_CheckWeakInvalidCharger chr=%d max_current=%d, ret=%d\n",
+		BMT_status.charger_type, g_aicr_upper_bound, ret);
+
+	return ret;
+}
+#endif
+
+//CEI comments start//
+unsigned int BatteryNotifyCode_buf[5] = {0};
+
+void add_notifycode(void)
+{
+	int i = 0;
+	static unsigned int last_BatteryNotifyCode = 0;
+
+	if((g_BatteryNotifyCode != 0) && (g_BatteryNotifyCode != last_BatteryNotifyCode))
+	{
+		for(i = 0; i < 4; i++) // Assign index 0 to 3
+		{
+			BatteryNotifyCode_buf[i] = BatteryNotifyCode_buf[i+1];
+		}
+		BatteryNotifyCode_buf[4] = g_BatteryNotifyCode;
+
+		last_BatteryNotifyCode = g_BatteryNotifyCode;
+	}
+}
+//CEI comments end//
 
 static void mt_battery_notify_TotalChargingTime_check(void)
 {
@@ -2309,7 +3004,12 @@ static void mt_battery_notify_TotalChargingTime_check(void)
 	if ((g_battery_thermal_throttling_flag == 2) || (g_battery_thermal_throttling_flag == 3)) {
 		battery_log(BAT_LOG_FULL, "[TestMode] Disable Safety Timer : no UI display\n");
 	} else {
-		if (BMT_status.total_charging_time >= MAX_CHARGING_TIME)
+//CEI comments start//
+//Safety_timer
+//		if (BMT_status.total_charging_time >= MAX_CHARGING_TIME)
+		if( (((BMT_status.charger_type == STANDARD_CHARGER) || (BMT_status.charger_type == APPLE_2_1A_CHARGER) ) && BMT_status.total_charging_time >= MAX_CHARGING_TIME) ||\
+			(((BMT_status.charger_type != STANDARD_CHARGER) && (BMT_status.charger_type != APPLE_2_1A_CHARGER)) && (BMT_status.total_charging_time >= PC_MAX_CHARGING_TIME)) )
+//CEI comments end//
 			/* if (BMT_status.total_charging_time >= 60) //test */
 		{
 			g_BatteryNotifyCode |= 0x0010;
@@ -2319,9 +3019,13 @@ static void mt_battery_notify_TotalChargingTime_check(void)
 		}
 	}
 
+//CEI comments start//
+	add_notifycode();
 	battery_log(BAT_LOG_CRTI,
-		    "[BATTERY] BATTERY_NOTIFY_CASE_0005_TOTAL_CHARGINGTIME (%x)\n",
-		    g_BatteryNotifyCode);
+		    "[BATTERY] BATTERY_NOTIFY_CASE_0005_TOTAL_CHARGINGTIME (%x), %d %d %d, NotifyCode=%x %x %x %x %x\n",
+		    g_BatteryNotifyCode, g_battery_thermal_throttling_flag, battery_cmd_thermal_test_mode, battery_cmd_thermal_test_mode_value,
+		    BatteryNotifyCode_buf[0], BatteryNotifyCode_buf[1], BatteryNotifyCode_buf[2], BatteryNotifyCode_buf[3], BatteryNotifyCode_buf[4]);
+//CEI comments end//
 #endif
 }
 
@@ -2605,6 +3309,11 @@ CHARGER_TYPE mt_get_charger_type(void)
 #endif
 }
 
+//CEI comment start//
+//BAT_status_Full feature
+extern unsigned int g_full_check_count;
+//CEI comment end//
+
 static void mt_battery_charger_detect_check(void)
 {
 #ifdef CONFIG_MTK_BQ25896_SUPPORT
@@ -2615,10 +3324,6 @@ static void mt_battery_charger_detect_check(void)
 */
 	unsigned int pwr;
 #endif
-#ifdef CONFIG_TCPC_CLASS
-	uint8_t typec_state = TYPEC_UNATTACHED;
-#endif /* CONFIG_TCPC_CLASS */
-
 	if (upmu_is_chr_det() == KAL_TRUE) {
 		wake_lock(&battery_suspend_lock);
 
@@ -2660,27 +3365,12 @@ static void mt_battery_charger_detect_check(void)
 		pwr = 0;
 		battery_charging_control(CHARGING_CMD_SET_CHRIND_CK_PDN, &pwr);
 #endif
-
-		battery_log(BAT_LOG_FULL, "[BAT_thread]Cable in, CHR_Type_num=%d\r\n",
+//CEI comment start//
+		battery_log(BAT_LOG_CRTI, "[BAT_thread]Cable in, CHR_Type_num=%d\r\n",
 			    BMT_status.charger_type);
-
+//CEI comment end//
 
 	} else {
-#ifdef CONFIG_TCPC_CLASS
-		if (bat_is_kpoc()) {
-			if (!tcpc_dev) {
-				tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
-				if (!tcpc_dev)
-					pr_err("%s get tcpc device type_c_port0 fail\n",
-						__func__);
-			} else
-				typec_state = tcpm_inquire_typec_attach_state(tcpc_dev);
-
-			if (typec_state != TYPEC_UNATTACHED)
-				return;
-		}
-#endif /* CONFIG_TCPC_CLASS */
-
 		wake_unlock(&battery_suspend_lock);
 
 		BMT_status.charger_exist = KAL_FALSE;
@@ -2693,16 +3383,24 @@ static void mt_battery_charger_detect_check(void)
 		BMT_status.CC_charging_time = 0;
 		BMT_status.TOPOFF_charging_time = 0;
 		BMT_status.POSTFULL_charging_time = 0;
+//CEI comment start//
+//BAT_status_Full feature
+		g_full_check_count = 0;
+//99%<->100% reqirement
+		if(battery_main.BAT_CAPACITY != 100)
+		{
+			chg_ever_full = 0;
+		}
+//CEI comment end//
 
 		BMT_status.charger_vol = 0;
 
 		battery_log(BAT_LOG_FULL, "[BAT_thread]Cable out \r\n");
 
 		mt_usb_disconnect();
-		hw_bc11_dcd_release();
-
-		battery_log(BAT_LOG_FULL, "[PE+] Cable OUT\n");
-
+//CEI comment start//
+		battery_log(BAT_LOG_CRTI, "[PE+] Cable OUT\n");
+//CEI comment end//
 
 #ifdef CONFIG_MTK_BQ25896_SUPPORT
 /*New low power feature of MT6531: disable charger CLK without CHARIN.
@@ -2720,38 +3418,17 @@ static void mt_battery_charger_detect_check(void)
 static void mt_kpoc_power_off_check(void)
 {
 #ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
-#ifdef CONFIG_TCPC_CLASS
-	uint8_t typec_state = TYPEC_UNATTACHED;
-
-	if (!tcpc_dev) {
-		tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
-		if (!tcpc_dev)
-			pr_err("%s get tcpc device type_c_port0 fail\n", __func__);
-	} else
-		typec_state = tcpm_inquire_typec_attach_state(tcpc_dev);
-#endif /* CONFIG_TCPC_CLASS */
-
 	if (g_platform_boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT
 	    || g_platform_boot_mode == LOW_POWER_OFF_CHARGING_BOOT) {
 
 		battery_log(BAT_LOG_CRTI, "[mt_kpoc_power_off_check] chr_vol=%d, boot_mode=%d\r\n",
 		BMT_status.charger_vol, g_platform_boot_mode);
 
-
-#ifdef CONFIG_TCPC_CLASS
-		if ((upmu_is_chr_det() == KAL_FALSE) && (BMT_status.charger_vol < 2500)
-			&& typec_state == TYPEC_UNATTACHED) {	/* vbus < 2.5V */
+		if ((upmu_is_chr_det() == KAL_FALSE) && (BMT_status.charger_vol < 2500)) {	/* vbus < 2.5V */
 			battery_log(BAT_LOG_CRTI,
 				    "[mt_kpoc_power_off_check] Unplug Charger/USB In Kernel Power Off Charging Mode!  Shutdown OS!\r\n");
 			battery_charging_control(CHARGING_CMD_SET_POWER_OFF, NULL);
 		}
-#else
-		if ((upmu_is_chr_det() == KAL_FALSE) && (BMT_status.charger_vol < 2500)) {
-			battery_log(BAT_LOG_CRTI,
-				    "[mt_kpoc_power_off_check] Unplug Charger/USB In Kernel Power Off Charging Mode!  Shutdown OS!\r\n");
-			battery_charging_control(CHARGING_CMD_SET_POWER_OFF, NULL);
-		}
-#endif /* CONFIG_TCPC_CLASS */
 	}
 #endif
 }
@@ -2790,6 +3467,11 @@ void do_chrdet_int_task(void)
 
 			wake_lock(&battery_suspend_lock);
 
+#ifdef CUSTOM_INVALID_SOFT_CHARGER_DETECT
+			if (mt_battery_CheckWeakInvalidCharger())
+				ICO_change_state(1);
+#endif
+
 #if defined(CONFIG_POWER_EXT)
 			mt_usb_connect();
 			battery_log(BAT_LOG_CRTI,
@@ -2806,9 +3488,6 @@ void do_chrdet_int_task(void)
 			battery_log(BAT_LOG_CRTI, "[do_chrdet_int_task] charger NOT exist!\n");
 			BMT_status.charger_exist = KAL_FALSE;
 
-			/* Reset AICR's upper bound calculated by AICL */
-			mtk_chr_reset_aicr_upper_bound();
-
 			/* Set AICR to 500mA if it is plugged out */
 			battery_charging_control(CHARGING_CMD_SET_INPUT_CURRENT,
 				&plug_out_aicr);
@@ -2820,14 +3499,8 @@ void do_chrdet_int_task(void)
 #endif
 
 #ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
-#ifdef CONFIG_TCPC_CLASS
-			if ((g_platform_boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT
-			    || g_platform_boot_mode == LOW_POWER_OFF_CHARGING_BOOT) &&
-				mtk_chr_is_kpoc_shutdown_enable()) {
-#else
 			if (g_platform_boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT
 			    || g_platform_boot_mode == LOW_POWER_OFF_CHARGING_BOOT) {
-#endif /* CONFIG_TCPC_CLASS */
 				battery_log(BAT_LOG_CRTI,
 					    "[pmic_thread_kthread] Unplug Charger/USB In Kernel Power Off Charging Mode!  Shutdown OS!\r\n");
 				battery_charging_control(CHARGING_CMD_SET_POWER_OFF, NULL);
@@ -2835,6 +3508,10 @@ void do_chrdet_int_task(void)
 			}
 #endif
 
+#ifdef CUSTOM_INVALID_SOFT_CHARGER_DETECT
+			if (invalid_chr_state)
+				ICO_change_state(0);
+#endif
 			wake_unlock(&battery_suspend_lock);
 
 #if defined(CONFIG_POWER_EXT)
@@ -2867,8 +3544,14 @@ void do_chrdet_int_task(void)
 		/* Place charger detection and battery update here is used to speed up charging icon display. */
 
 		mt_battery_charger_detect_check();
+
+//CEI comment start//
+//BAT_status_Full feature
+//		if (BMT_status.UI_SOC2 == 100 && BMT_status.charger_exist == KAL_TRUE
+//		    && BMT_status.bat_charging_state != CHR_ERROR) { //MTK ORG
 		if (BMT_status.UI_SOC2 == 100 && BMT_status.charger_exist == KAL_TRUE
-		    && BMT_status.bat_charging_state != CHR_ERROR) {
+			&& BMT_status.bat_charging_state != CHR_ERROR && (bat_is_charging_full() == KAL_TRUE)) {
+//CEI comment end
 			BMT_status.bat_charging_state = CHR_BATFULL;
 			BMT_status.bat_full = KAL_TRUE;
 			g_charging_full_reset_bat_meter = KAL_TRUE;
@@ -2889,6 +3572,17 @@ void do_chrdet_int_task(void)
 #endif
 
 		wake_up_bat();
+
+// CEI comment start//
+//Set default Vindpm to 4.4V
+		{
+			int vindpm = CHR_VOLT_04_400000_V;
+
+			if(battery_charging_control != 0)
+				battery_charging_control(CHARGING_CMD_SET_DEFAULT_DPM, &vindpm);
+		}
+// CEI comment end//
+
 	} else {
 #if defined(CONFIG_MTK_DUAL_INPUT_CHARGER_SUPPORT)
 		g_vcdt_irq_delay_flag = KAL_TRUE;
@@ -2903,6 +3597,11 @@ void do_chrdet_int_task(void)
 void BAT_thread(void)
 {
 	static kal_bool battery_meter_initilized = KAL_FALSE;
+#ifdef CUSTOM_SOFT_CHARGE_30
+	static kal_bool prev_charger_status = KAL_FALSE;
+	signed int temperature;
+	unsigned int thread_duration_time;
+#endif
 
 	if (battery_meter_initilized == KAL_FALSE) {
 		battery_meter_initial();	/* move from battery_probe() to decrease booting time */
@@ -2912,6 +3611,46 @@ void BAT_thread(void)
 
 
 	mt_battery_update_time(&batteryThreadRunTime, BATTERY_THREAD_TIME);
+
+#ifdef CUSTOM_SOFT_CHARGE_30
+	if ((prev_charger_status == KAL_TRUE) &&
+		(battery_main.BAT_STATUS == POWER_SUPPLY_STATUS_CHARGING) && (sc30_en == KAL_TRUE)) {
+		temperature = battery_meter_get_battery_temperature();
+		thread_duration_time = mt_battery_get_duration_time(BATTERY_THREAD_TIME);
+
+		if (BMT_status.bat_vol > 4250) {
+			if (temperature < 30) {
+				time_A += thread_duration_time;
+				battery_log(BAT_LOG_CRTI,
+					"less than 30 degrees and battery voltage : more than 4.25 V\n");
+			} else if (temperature <= 40) {
+				time_B += thread_duration_time;
+				battery_log(BAT_LOG_CRTI,
+					"between 30 and 40 degrees battery voltage : more than 4.25 V\n");
+			} else {
+				time_C += thread_duration_time;
+				battery_log(BAT_LOG_CRTI,
+					"more than 40 degrees and battery voltage : more than 4.25 V\n");
+			}
+		}
+
+		time_T = ((time_A * 100 / TIME_FACTOR_A) + (time_B * 100 / TIME_FACTOR_B) +
+					(time_C * 100 / TIME_FACTOR_C));
+		if ((time_T > SC30_TIME_THRESHOLD) || low_cv) {
+			/* CV voltage 4350 -> 4300*/
+			set_sc30_low_cv_voltage(KAL_TRUE);
+			low_cv = 1;
+		} else
+			set_sc30_low_cv_voltage(KAL_FALSE);
+
+		battery_log(BAT_LOG_CRTI, "[SC30] duration_time=%u C=%d V=%d T=%d (TA=%u TB=%u TC=%u TT=%u L_CV=%u)\n",
+			thread_duration_time, BMT_status.charger_exist, BMT_status.bat_vol, temperature,
+			time_A, time_B, time_C, time_T, low_cv);
+	} else if (sc30_en == KAL_FALSE)
+		set_sc30_low_cv_voltage(KAL_FALSE);
+
+	prev_charger_status = BMT_status.charger_exist;
+#endif
 
 	if (fg_ipoh_reset) {
 		battery_log(BAT_LOG_CRTI, "[FG BAT_thread]FG_MAIN because IPOH  .\n");
@@ -2934,15 +3673,16 @@ void BAT_thread(void)
 	mt_battery_thermal_check();
 	mt_battery_notify_check();
 
-	if ((BMT_status.charger_exist == KAL_TRUE) && (battery_suspended == KAL_FALSE)) {
+	if (BMT_status.charger_exist == KAL_TRUE) {
 		mt_battery_CheckBatteryStatus();
 		mt_battery_charging_algorithm();
+#ifdef CUSTOM_INVALID_SOFT_CHARGER_DETECT
+		if (mt_battery_CheckWeakInvalidCharger())
+			ICO_change_state(1);
+#endif
 	}
 
 	mt_kpoc_power_off_check();
-
-	/*Add in case something wrong happened in fg_bat_int_handler*/
-	battery_meter_set_fg_int();
 }
 
 /* ///////////////////////////////////////////////////////////////////////////////////////// */
@@ -3047,6 +3787,8 @@ static long adc_cali_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 	int adc_in_data[2] = { 1, 1 };
 	int adc_out_data[2] = { 1, 1 };
 	int temp_car_tune;
+
+	mutex_lock(&bat_mutex);
 
 	switch (cmd) {
 	case TEST_ADC_CALI_PRINT:
@@ -3153,8 +3895,6 @@ static long adc_cali_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 		break;
 
 	case Set_Charger_Current:	/* For Factory Mode */
-		mutex_lock(&bat_mutex);
-
 		user_data_addr = (int *)arg;
 		ret = copy_from_user(charging_level_data, user_data_addr, 4);
 		g_ftm_battery_flag = KAL_TRUE;
@@ -3192,9 +3932,6 @@ static long adc_cali_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 			charging_level_data[0] = CHARGE_CURRENT_1600_00_MA;
 		else
 			charging_level_data[0] = CHARGE_CURRENT_450_00_MA;
-
-		mutex_unlock(&bat_mutex);
-
 		wake_up_bat();
 		battery_log(BAT_LOG_CRTI, "**** unlocked_ioctl : set_Charger_Current:%d\n",
 			    charging_level_data[0]);
@@ -3247,6 +3984,8 @@ static long adc_cali_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 		g_ADC_Cali = KAL_FALSE;
 		break;
 	}
+
+	mutex_unlock(&bat_mutex);
 
 	return 0;
 }
@@ -3313,7 +4052,7 @@ int charger_hv_detect_sw_thread_handler(void *unused)
 	ktime_t ktime;
 	unsigned int charging_enable;
 	unsigned int hv_voltage = batt_cust_data.v_charger_max * 1000;
-	kal_bool hv_status = KAL_FALSE;
+	kal_bool hv_status;
 
 
 #if defined(CONFIG_MTK_DUAL_INPUT_CHARGER_SUPPORT)
@@ -3677,176 +4416,178 @@ static int __batt_init_cust_data_from_dt(void)
 	}
 
 	__batt_parse_node(np, "stop_charging_in_takling",
-		&batt_cust_data.stop_charging_in_takling);
+		&batt_cust_data.stop_charging_in_takling); //CEI comment : ORG DTS= 1 //
 
 	__batt_parse_node(np, "talking_recharge_voltage",
-		&batt_cust_data.talking_recharge_voltage);
+		&batt_cust_data.talking_recharge_voltage); //CEI comment : ORG DTS= 3800 //
 
 	__batt_parse_node(np, "talking_sync_time",
-		&batt_cust_data.talking_sync_time);
+		&batt_cust_data.talking_sync_time); //CEI comment : ORG DTS= 60 //
 
 	__batt_parse_node(np, "mtk_temperature_recharge_support",
-		&batt_cust_data.mtk_temperature_recharge_support);
+		&batt_cust_data.mtk_temperature_recharge_support); //CEI comment : ORG DTS= 1 //
 
 	__batt_parse_node(np, "max_charge_temperature",
-		&batt_cust_data.max_charge_temperature);
+		&batt_cust_data.max_charge_temperature); //CEI comment : ORG DTS= 50 //
 
 	__batt_parse_node(np, "max_charge_temperature_minus_x_degree",
-		&batt_cust_data.max_charge_temperature_minus_x_degree);
+		&batt_cust_data.max_charge_temperature_minus_x_degree); //CEI comment : ORG DTS= 47 //
 
 	__batt_parse_node(np, "min_charge_temperature",
-		&batt_cust_data.min_charge_temperature);
+		&batt_cust_data.min_charge_temperature); //CEI comment : ORG DTS= 0 //
 
 	__batt_parse_node(np, "min_charge_temperature_plus_x_degree",
-		&batt_cust_data.min_charge_temperature_plus_x_degree);
+		&batt_cust_data.min_charge_temperature_plus_x_degree); //CEI comment : ORG DTS= 6 //
 
 	__batt_parse_node(np, "err_charge_temperature",
-		&batt_cust_data.err_charge_temperature);
+		&batt_cust_data.err_charge_temperature); //CEI comment : ORG DTS= 0xff //
 
 	__batt_parse_node(np, "v_pre2cc_thres",
-		&batt_cust_data.v_pre2cc_thres);
+		&batt_cust_data.v_pre2cc_thres); //CEI comment : ORG DTS= 3400 //
 
 	__batt_parse_node(np, "v_cc2topoff_thres",
-		&batt_cust_data.v_cc2topoff_thres);
+		&batt_cust_data.v_cc2topoff_thres); //CEI comment : ORG DTS= 4050 //
 
 	__batt_parse_node(np, "recharging_voltage",
-		&batt_cust_data.recharging_voltage);
+		&batt_cust_data.recharging_voltage); //CEI comment : ORG DTS= 4110 //
 
 	__batt_parse_node(np, "charging_full_current",
-		&batt_cust_data.charging_full_current);
+		&batt_cust_data.charging_full_current); //CEI comment : ORG DTS= 100 //
 
 	__batt_parse_node(np, "config_usb_if",
-		&batt_cust_data.config_usb_if);
+		&batt_cust_data.config_usb_if); //CEI comment : ORG DTS= 0 //
 
 	__batt_parse_node(np, "usb_charger_current_suspend",
-		&batt_cust_data.usb_charger_current_suspend);
+		&batt_cust_data.usb_charger_current_suspend); //CEI comment : ORG DTS= 0 //
 
 	__batt_parse_node(np, "usb_charger_current_unconfigured",
-		&batt_cust_data.usb_charger_current_unconfigured);
+		&batt_cust_data.usb_charger_current_unconfigured); //CEI comment : ORG DTS= 7000 //
 
 	__batt_parse_node(np, "usb_charger_current_configured",
-		&batt_cust_data.usb_charger_current_configured);
+		&batt_cust_data.usb_charger_current_configured); //CEI comment : ORG DTS= 500000 //
 
-	__batt_parse_node(np, "usb_charger_current",
-		&batt_cust_data.usb_charger_current);
+//CEI comment start// //Check//
+	__batt_parse_node(np, "usb_ibat_current",
+		&batt_cust_data.usb_charger_current); //CEI comment : ORG DTS= 500000 //
+//CEI comment end//
 
 	__batt_parse_node(np, "ac_charger_input_current",
-		&batt_cust_data.ac_charger_input_current);
+		&batt_cust_data.ac_charger_input_current); //CEI comment : add item=150000 //
 
 	__batt_parse_node(np, "ac_charger_current",
-		&batt_cust_data.ac_charger_current);
+		&batt_cust_data.ac_charger_current); //CEI comment :185600,  ORG DTS= 80000 //
 
 	__batt_parse_node(np, "non_std_ac_charger_current",
-		&batt_cust_data.non_std_ac_charger_current);
+		&batt_cust_data.non_std_ac_charger_current); 
 
 	__batt_parse_node(np, "charging_host_charger_current",
-		&batt_cust_data.charging_host_charger_current);
+		&batt_cust_data.charging_host_charger_current); //CEI comment : ORG DTS= 500000 //
 
 	__batt_parse_node(np, "apple_0_5a_charger_current",
-		&batt_cust_data.apple_0_5a_charger_current);
+		&batt_cust_data.apple_0_5a_charger_current); //CEI comment : ORG DTS= 500000 //
 
-	__batt_parse_node(np, "apple_1_0a_charger_current",
-		&batt_cust_data.apple_1_0a_charger_current);
+ 	__batt_parse_node(np, "apple_1_0a_charger_current",
+ 		&batt_cust_data.apple_1_0a_charger_current); //CEI comment : ORG DTS= 650000 //
 
 	__batt_parse_node(np, "apple_2_1a_charger_current",
-		&batt_cust_data.apple_2_1a_charger_current);
+		&batt_cust_data.apple_2_1a_charger_current); //CEI comment : ORG DTS= 800000 //
 
 	__batt_parse_node(np, "bat_low_temp_protect_enable",
-		&batt_cust_data.bat_low_temp_protect_enable);
+		&batt_cust_data.bat_low_temp_protect_enable); //CEI comment : ORG DTS= 0 //
 
 	__batt_parse_node(np, "v_charger_enable",
-		&batt_cust_data.v_charger_enable);
+		&batt_cust_data.v_charger_enable); //CEI comment : ORG DTS= 0 //
 
 	__batt_parse_node(np, "v_charger_max",
-		&batt_cust_data.v_charger_max);
+		&batt_cust_data.v_charger_max); //CEI comment : ORG DTS= 6500 //
 
 	__batt_parse_node(np, "v_charger_min",
-		&batt_cust_data.v_charger_min);
+		&batt_cust_data.v_charger_min); //CEI comment : ORG DTS= 4400 //
 
 	__batt_parse_node(np, "v_0percent_tracking",
-		&batt_cust_data.v_0percent_tracking);
+		&batt_cust_data.v_0percent_tracking); //CEI comment : ORG DTS= 3450 //
 
 	__batt_parse_node(np, "high_battery_voltage_support",
-		&batt_cust_data.high_battery_voltage_support);
+		&batt_cust_data.high_battery_voltage_support); //CEI comment : 1, ORG DTS= 0//
 
 	__batt_parse_node(np, "mtk_jeita_standard_support",
-		&batt_cust_data.mtk_jeita_standard_support);
+		&batt_cust_data.mtk_jeita_standard_support); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "cust_soc_jeita_sync_time",
-		&batt_cust_data.cust_soc_jeita_sync_time);
+		&batt_cust_data.cust_soc_jeita_sync_time); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_recharge_voltage",
-		&batt_cust_data.jeita_recharge_voltage);
+		&batt_cust_data.jeita_recharge_voltage); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_above_pos_60_cv_voltage",
-		&batt_cust_data.jeita_temp_above_pos_60_cv_voltage);
+		&batt_cust_data.jeita_temp_above_pos_60_cv_voltage); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_pos_10_to_pos_45_cv_voltage",
-		&batt_cust_data.jeita_temp_pos_10_to_pos_45_cv_voltage);
+		&batt_cust_data.jeita_temp_pos_10_to_pos_45_cv_voltage); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_pos_0_to_pos_10_cv_voltage",
-		&batt_cust_data.jeita_temp_pos_0_to_pos_10_cv_voltage);
+		&batt_cust_data.jeita_temp_pos_0_to_pos_10_cv_voltage); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_neg_10_to_pos_0_cv_voltage",
-		&batt_cust_data.jeita_temp_neg_10_to_pos_0_cv_voltage);
+		&batt_cust_data.jeita_temp_neg_10_to_pos_0_cv_voltage); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_below_neg_10_cv_voltage",
-		&batt_cust_data.jeita_temp_below_neg_10_cv_voltage);
+		&batt_cust_data.jeita_temp_below_neg_10_cv_voltage); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_neg_10_to_pos_0_full_current",
-		&batt_cust_data.jeita_neg_10_to_pos_0_full_current);
+		&batt_cust_data.jeita_neg_10_to_pos_0_full_current); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_pos_45_to_pos_60_recharge_voltage",
-		&batt_cust_data.jeita_temp_pos_45_to_pos_60_recharge_voltage);
+		&batt_cust_data.jeita_temp_pos_45_to_pos_60_recharge_voltage); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_pos_10_to_pos_45_recharge_voltage",
-		&batt_cust_data.jeita_temp_pos_10_to_pos_45_recharge_voltage);
+		&batt_cust_data.jeita_temp_pos_10_to_pos_45_recharge_voltage); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_pos_0_to_pos_10_recharge_voltage",
-		&batt_cust_data.jeita_temp_pos_0_to_pos_10_recharge_voltage);
+		&batt_cust_data.jeita_temp_pos_0_to_pos_10_recharge_voltage); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_neg_10_to_pos_0_recharge_voltage",
-		&batt_cust_data.jeita_temp_neg_10_to_pos_0_recharge_voltage);
+		&batt_cust_data.jeita_temp_neg_10_to_pos_0_recharge_voltage); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_pos_45_to_pos_60_cc2topoff_threshold",
-		&batt_cust_data.jeita_temp_pos_45_to_pos_60_cc2topoff_threshold);
+		&batt_cust_data.jeita_temp_pos_45_to_pos_60_cc2topoff_threshold); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_pos_10_to_pos_45_cc2topoff_threshold",
-		&batt_cust_data.jeita_temp_pos_10_to_pos_45_cc2topoff_threshold);
+		&batt_cust_data.jeita_temp_pos_10_to_pos_45_cc2topoff_threshold); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_pos_0_to_pos_10_cc2topoff_threshold",
-		&batt_cust_data.jeita_temp_pos_0_to_pos_10_cc2topoff_threshold);
+		&batt_cust_data.jeita_temp_pos_0_to_pos_10_cc2topoff_threshold); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "jeita_temp_neg_10_to_pos_0_cc2topoff_threshold",
-		&batt_cust_data.jeita_temp_neg_10_to_pos_0_cc2topoff_threshold);
+		&batt_cust_data.jeita_temp_neg_10_to_pos_0_cc2topoff_threshold); //CEI comment : NOT in DT!!! //
 
 #if	defined(CONFIG_MTK_PUMP_EXPRESS_PLUS_SUPPORT)
 	__batt_parse_node(np, "mtk_pump_express_plus_support",
-		&batt_cust_data.mtk_pump_express_plus_support);
+		&batt_cust_data.mtk_pump_express_plus_support); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "ta_start_battery_soc",
-		&batt_cust_data.ta_start_battery_soc);
+		&batt_cust_data.ta_start_battery_soc); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "ta_stop_battery_soc",
-		&batt_cust_data.ta_stop_battery_soc);
+		&batt_cust_data.ta_stop_battery_soc); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "ta_ac_12v_input_current",
-		&batt_cust_data.ta_ac_12v_input_current);
+		&batt_cust_data.ta_ac_12v_input_current); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "ta_ac_9v_input_current",
-		&batt_cust_data.ta_ac_9v_input_current);
+		&batt_cust_data.ta_ac_9v_input_current); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "ta_ac_7v_input_current",
-		&batt_cust_data.ta_ac_7v_input_current);
+		&batt_cust_data.ta_ac_7v_input_current); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "ta_ac_charging_current",
-		&batt_cust_data.ta_ac_charging_current);
+		&batt_cust_data.ta_ac_charging_current); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "ta_9v_support",
-		&batt_cust_data.ta_9v_support);
+		&batt_cust_data.ta_9v_support); //CEI comment : NOT in DT!!! //
 
 	__batt_parse_node(np, "ta_12v_support",
-		&batt_cust_data.ta_12v_support);
+		&batt_cust_data.ta_12v_support); //CEI comment : NOT in DT!!! //
 #endif
 
 	of_node_put(np);
@@ -3907,12 +4648,6 @@ static int battery_probe(struct platform_device *dev)
 	mtk_pep_init();
 	mtk_pep20_init();
 
-#ifdef CONFIG_TCPC_CLASS
-	tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
-	if (!tcpc_dev)
-		pr_err("%s get tcpc device type_c_port0 fail\n", __func__);
-#endif
-
 	/* Integrate with Android Battery Service */
 	ret = power_supply_register(&(dev->dev), &ac_main.psy);
 	if (ret) {
@@ -3941,6 +4676,18 @@ static int battery_probe(struct platform_device *dev)
 		return ret;
 	}
 	battery_log(BAT_LOG_CRTI, "[BAT_probe] power_supply_register Battery Success !!\n");
+
+#ifdef CUSTOM_INVALID_SOFT_CHARGER_DETECT
+	invaliddev.name = "invalid_charger";
+	invaliddev.index = 0;
+	invaliddev.state = 0;
+	swith_reg_ret = switch_dev_register(&invaliddev);
+	battery_log(BAT_LOG_CRTI, "akak switch_dev_register\n");
+	if (swith_reg_ret) {
+		battery_log(BAT_LOG_CRTI, "LE(K)=> invalid_charger (%d)\n", swith_reg_ret);
+		switch_dev_unregister(&invaliddev);
+	}
+#endif
 
 #if !defined(CONFIG_POWER_EXT)
 
@@ -4007,7 +4754,11 @@ static int battery_probe(struct platform_device *dev)
 		ret_device_file = device_create_file(&(dev->dev), &dev_attr_Charging_CallState);
 		ret_device_file = device_create_file(&(dev->dev), &dev_attr_Charger_Type);
 		ret_device_file = device_create_file(&(dev->dev), &dev_attr_Pump_Express);
-
+#ifdef CUSTOM_SOFT_CHARGE_30
+		ret_device_file = device_create_file(&(dev->dev), &dev_attr_SC30_Status);
+		ret_device_file = device_create_file(&(dev->dev), &dev_attr_SC30_En);
+		ret_device_file = device_create_file(&(dev->dev), &dev_attr_Chk_SC30_Data);
+#endif
 	}
 
 	/* battery_meter_initial();      //move to mt_battery_GetBatteryData() to decrease booting time */

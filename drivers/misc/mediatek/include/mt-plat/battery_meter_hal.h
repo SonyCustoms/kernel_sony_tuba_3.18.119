@@ -18,13 +18,16 @@
 /* ============================================================ */
 /* define */
 /* ============================================================ */
-#define BM_LOG_CRTI (7)
+//CEI comment start//
+// #define BM_LOG_CRTI (7)
+#define BM_LOG_CRTI (6)
+//CEI comment end
 #define BM_LOG_FULL (8)
 
 #define bm_print(num, fmt, args...)   \
 do {									\
 	if (Enable_FGADC_LOG >= (int)num) {				\
-		pr_debug(fmt, ##args); \
+		pr_err(fmt, ##args); \
 	}								   \
 } while (0)
 
@@ -35,7 +38,7 @@ do {									\
 #define BMLOG_DEBUG_LEVEL   7
 #define BMLOG_TRACE_LEVEL   8
 
-
+//CEI comment start//
 #define bm_err(fmt, args...)   \
 do {									\
 	if (Enable_FGADC_LOG >= BMLOG_ERROR_LEVEL) {			\
@@ -46,38 +49,38 @@ do {									\
 #define bm_warn(fmt, args...)   \
 do {									\
 	if (Enable_FGADC_LOG >= BMLOG_WARNING_LEVEL) {		\
-		pr_warn(fmt, ##args); \
+		pr_err(fmt, ##args); \
 	}								   \
 } while (0)
 
 #define bm_notice(fmt, args...)   \
 do {									\
 	if (Enable_FGADC_LOG >= BMLOG_NOTICE_LEVEL) {			\
-		pr_notice(fmt, ##args); \
+		pr_err(fmt, ##args); \
 	}								   \
 } while (0)
 
 #define bm_info(fmt, args...)   \
 do {									\
 	if (Enable_FGADC_LOG >= BMLOG_INFO_LEVEL) {		\
-		pr_info(fmt, ##args); \
+		pr_err(fmt, ##args); \
 	}								   \
 } while (0)
 
 #define bm_debug(fmt, args...)   \
 do {									\
 	if (Enable_FGADC_LOG >= BMLOG_DEBUG_LEVEL) {		\
-		pr_debug(fmt, ##args); \
+		pr_err(fmt, ##args); \
 	}								   \
 } while (0)
 
 #define bm_trace(fmt, args...)\
 do {									\
 	if (Enable_FGADC_LOG >= BMLOG_TRACE_LEVEL) {			\
-		pr_debug(fmt, ##args);\
+		pr_err(fmt, ##args);\
 	}						\
 } while (0)
-
+//CEI comment end//
 
 #define BM_DAEMON_DEFAULT_LOG_LEVEL 3
 
@@ -110,7 +113,9 @@ typedef enum {
 	BATTERY_METER_CMD_SET_META_CALI_CURRENT,
 	BATTERY_METER_CMD_META_CALI_CAR_TUNE_VALUE,
 	BATTERY_METER_CMD_GET_IS_HW_OCV_READY,
-	BATTERY_METER_CMD_GET_ZCV_INT_HW_OCV,
+//CEI comments start//
+	BATTERY_METER_CMD_GET_ADC_V_BAT_ID,
+//CEI comments end//
 
 	BATTERY_METER_CMD_NUMBER
 } BATTERY_METER_CTRL_CMD;

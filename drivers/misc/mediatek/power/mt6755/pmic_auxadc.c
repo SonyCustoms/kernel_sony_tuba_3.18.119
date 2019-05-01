@@ -71,6 +71,8 @@
  * PMIC-AUXADC global variable
  */
 
+#define PMIC_DEBUG_PR_DBG
+
 #define PMICTAG                "[Auxadc] "
 #if defined PMIC_DEBUG_PR_DBG
 #define PMICLOG2(fmt, arg...)   pr_err(PMICTAG fmt, ##arg)

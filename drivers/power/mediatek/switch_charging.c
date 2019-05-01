@@ -49,6 +49,7 @@
 #include <mt-plat/battery_meter.h>
 #include <mt-plat/battery_common.h>
 #include <mt-plat/battery_meter_hal.h>
+#include <mach/mt_battery_meter.h>
 #include <mt-plat/charging.h>
 #include <mach/mt_charging.h>
 #include <mt-plat/mt_boot.h>
@@ -67,7 +68,10 @@
 /* ============================================================ // */
 /* cut off to full */
 #define POST_CHARGING_TIME (30*60)	/* 30mins */
-#define FULL_CHECK_TIMES 6
+//CEI comment start//
+//BAT_status_Full feature
+#define FULL_CHECK_TIMES 6 //Doesn't modify because bat thread time is 10 seconds in MT6755
+//CEI comment end//
 
 #define STATUS_OK    0
 #define STATUS_UNSUPPORTED    -1
@@ -89,7 +93,10 @@ unsigned int g_usb_state = USB_UNCONFIGURED;
 static bool usb_unlimited;
 #if defined(CONFIG_MTK_HAFG_20)
 #ifdef HIGH_BATTERY_VOLTAGE_SUPPORT
-BATTERY_VOLTAGE_ENUM g_cv_voltage = BATTERY_VOLT_04_340000_V;
+//CEI comment start//
+//BATTERY_VOLTAGE_ENUM g_cv_voltage = BATTERY_VOLT_04_340000_V;
+BATTERY_VOLTAGE_ENUM g_cv_voltage = BATTERY_VOLT_04_304000_V;
+//CEI comment end//
 #else
 BATTERY_VOLTAGE_ENUM g_cv_voltage = BATTERY_VOLT_04_200000_V;
 #endif
@@ -97,16 +104,28 @@ unsigned int get_cv_voltage(void)
 {
 	return g_cv_voltage;
 }
+#ifdef CUSTOM_SOFT_CHARGE_30
+kal_bool g_sc30_low_cv_voltage = KAL_FALSE;
+void set_sc30_low_cv_voltage(kal_bool low_cv)
+{
+	g_sc30_low_cv_voltage = low_cv;
+}
 #endif
+#endif
+
+//CEI comment start//
+extern int board_type_with_hw_id(void);
+extern int battery_id_invalid;
+extern int g_fg_battery_id;
+extern int id_voltage_read;
+extern int g_battery_id_voltage[];
+//CEI comment end
+
 DEFINE_MUTEX(g_ichg_aicr_access_mutex);
 DEFINE_MUTEX(g_aicr_access_mutex);
 DEFINE_MUTEX(g_ichg_access_mutex);
-DEFINE_MUTEX(g_hv_charging_mutex);
 unsigned int g_aicr_upper_bound;
-static bool g_pd_enable_power_path = true;
 static bool g_enable_dynamic_cv = true;
-static bool g_enable_hv_charging = true;
-static atomic_t g_en_kpoc_shdn = ATOMIC_INIT(1);
 
  /* ///////////////////////////////////////////////////////////////////////////////////////// */
  /* // JEITA */
@@ -219,6 +238,10 @@ _out:
 }
 
 #if defined(CONFIG_MTK_JEITA_STANDARD_SUPPORT)
+//CEI comment start//
+//JEITA enable
+BATTERY_VOLTAGE_ENUM global_cv_voltage = BATTERY_VOLT_04_200000_V;
+//CEI comment end//
 
 static BATTERY_VOLTAGE_ENUM select_jeita_cv(void)
 {
@@ -230,7 +253,10 @@ static BATTERY_VOLTAGE_ENUM select_jeita_cv(void)
 		cv_voltage = JEITA_TEMP_POS_45_TO_POS_60_CV_VOLTAGE;
 	} else if (g_temp_status == TEMP_POS_10_TO_POS_45) {
 		if (batt_cust_data.high_battery_voltage_support)
-			cv_voltage = BATTERY_VOLT_04_340000_V;
+//CEI comment start//
+//JEITA enable: check
+			cv_voltage = BATTERY_VOLT_04_304000_V;
+//CEI comment end//
 		else
 			cv_voltage = JEITA_TEMP_POS_10_TO_POS_45_CV_VOLTAGE;
 	} else if (g_temp_status == TEMP_POS_0_TO_POS_10) {
@@ -260,7 +286,11 @@ PMU_STATUS do_jeita_state_machine(void)
 
 		g_temp_status = TEMP_ABOVE_POS_60;
 
-		return PMU_STATUS_FAIL;
+		//CEI comment start//
+		//JEITA enable
+		//return PMU_STATUS_FAIL;
+		jeita_status = PMU_STATUS_FAIL;
+		//CEI comment end//
 	} else if (BMT_status.temperature > TEMP_POS_45_THRESHOLD) {	/* control 45c to normal behavior */
 		if ((g_temp_status == TEMP_ABOVE_POS_60)
 		    && (BMT_status.temperature >= TEMP_POS_60_THRES_MINUS_X_DEGREE)) {
@@ -301,7 +331,11 @@ PMU_STATUS do_jeita_state_machine(void)
 				battery_log(BAT_LOG_CRTI,
 					    "[BATTERY] Battery Temperature between %d and %d,not allow charging yet!!\n\r",
 					    TEMP_POS_0_THRESHOLD, TEMP_POS_0_THRES_PLUS_X_DEGREE);
-				return PMU_STATUS_FAIL;
+				//CEI comment start//
+				//JEITA enable
+				//return PMU_STATUS_FAIL;
+				jeita_status = PMU_STATUS_FAIL;
+				//CEI comment end//
 			}
 		} else {
 			battery_log(BAT_LOG_CRTI,
@@ -338,6 +372,29 @@ PMU_STATUS do_jeita_state_machine(void)
 	/* In normal range, we adjust CV dynamically */
 	if (g_temp_status != TEMP_POS_10_TO_POS_45) {
 		cv_voltage = select_jeita_cv();
+
+//CEI comment start//
+//JEITA enable, Alien_battery
+	if(battery_id_invalid)
+	{
+		if (g_temp_status >= TEMP_POS_45_TO_POS_60)
+			cv_voltage = BATTERY_VOLT_04_000000_V;
+		else
+			cv_voltage = BATTERY_VOLT_04_200000_V;
+
+		battery_log(BAT_LOG_CRTI,
+			"[BATTERY]LE(K)=> [ALIEN] do_jeita_state_machine(), cv_voltage=%d, g_temp_status=%d\n", cv_voltage, g_temp_status);
+	}
+
+	battery_log(BAT_LOG_CRTI,
+	    "[BATTERY]LE(K)=> [JEITA] battery_id_invalid=%d, g_temp_status=%d, BMT_status.temp=%d, jeita_status=%s\n", battery_id_invalid, g_temp_status, BMT_status.temperature, (jeita_status == PMU_STATUS_OK)? "OK":"NOK");
+
+	battery_log(BAT_LOG_CRTI,
+	    "[BATTERY]LE(K)=> [JEITA] SET_CV_VOLTAGE=%d, BATT_ID=%d, battery_id_invalid=%d, id_voltage_read=%d, g_battery_id_voltage=%d %d %d\n", cv_voltage, g_fg_battery_id, battery_id_invalid, id_voltage_read, g_battery_id_voltage[0], g_battery_id_voltage[1], g_battery_id_voltage[2]);
+
+	global_cv_voltage = cv_voltage;
+//CEI comment end//
+
 		battery_charging_control(CHARGING_CMD_SET_CV_VOLTAGE,
 			&cv_voltage);
 #if defined(CONFIG_MTK_HAFG_20)
@@ -355,22 +412,54 @@ static void set_jeita_charging_current(void)
 	if (BMT_status.charger_type == STANDARD_HOST)
 		return;
 #endif
-
+//CEI comment start//
+//JEITA enable
+#if 0
 	if (g_temp_status == TEMP_NEG_10_TO_POS_0) {
 		g_temp_CC_value = CHARGE_CURRENT_350_00_MA;
 		g_temp_input_CC_value = CHARGE_CURRENT_500_00_MA;
 		battery_log(BAT_LOG_CRTI, "[BATTERY] JEITA set charging current : %d\r\n",
 			    g_temp_CC_value);
-	}
+#else
+	if((g_temp_status <= TEMP_NEG_10_TO_POS_0) || (g_temp_status == TEMP_ABOVE_POS_60))
+    {
+        g_temp_CC_value = CHARGE_CURRENT_0_00_MA; //for lowest/highest temp
+        battery_log(BAT_LOG_CRTI, "[BATTERY] LE(K)=> [JEITA] set charging current : %d(%d) (case A) \r\n", g_temp_CC_value, g_temp_status);
+    }
+	else if(( (g_temp_status == TEMP_POS_0_TO_POS_10) || (g_temp_status == TEMP_POS_45_TO_POS_60) ) && (BMT_status.charger_type == STANDARD_CHARGER))
+    {
+        g_temp_CC_value = CHARGE_CURRENT_675_00_MA; //for lower/higher temp
+        battery_log(BAT_LOG_CRTI, "[BATTERY] LE(K)=> [JEITA] set charging current : %d(%d) (case B) \r\n", g_temp_CC_value, g_temp_status);
+    }
+#endif
+//CEI comment end//
 }
+
+
+//CEI comment start//
+signed int check_if_jeita_current_limit(void)
+{
+	int jeita_cur_limit  = -1;
+
+	if((g_temp_status <= TEMP_NEG_10_TO_POS_0) || (g_temp_status == TEMP_ABOVE_POS_60))
+	{
+		jeita_cur_limit = CHARGE_CURRENT_0_00_MA;
+	}
+	else if(( (g_temp_status == TEMP_POS_0_TO_POS_10) || (g_temp_status == TEMP_POS_45_TO_POS_60) ) && (BMT_status.charger_type == STANDARD_CHARGER))
+		jeita_cur_limit = CHARGE_CURRENT_675_00_MA;
+	else
+		jeita_cur_limit = CHARGE_CURRENT_1856_00_MA;
+
+	return jeita_cur_limit;
+}
+//CEI comment end//
 
 #endif /* CONFIG_MTK_JEITA_STANDARD_SUPPORT */
 
 bool get_usb_current_unlimited(void)
 {
-	if (BMT_status.charger_type == STANDARD_HOST || BMT_status.charger_type == CHARGING_HOST) {
+	if (BMT_status.charger_type == STANDARD_HOST || BMT_status.charger_type == CHARGING_HOST)
 		return usb_unlimited;
-	}
 
 		return false;
 }
@@ -380,18 +469,94 @@ void set_usb_current_unlimited(bool enable)
 	usb_unlimited = enable;
 }
 
+//CEI comments start//
+struct chrlimt_table {
+        int vchr_thres[4];
+        int chrlimt_current[5][3];
+};
+
+static struct chrlimt_table chrlimit =
+{
+{2500, 5500, 7500, 9500},
+{
+{1001, 501, 251}, //vchr is less than 2.5V
+{1000, 500, 250}, //vchr is 5V
+{867, 467, 351}, //vchr is 7V
+{733, 434, 352}, //vchr is 9V
+{600, 400, 353}, //vchr is 12V
+},
+};
+
+struct bcct_log_table{
+	int bcct_value[17];
+	unsigned int bcct_count[17];
+};
+
+struct bcct_log_table bcct_log =
+{
+{1001, 1000, 867, 733, 600, 501, 500, 467, 434, 400, 353, 352, 351, 350, 251, 250, 0},
+{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+};
+int bcct_level = 0;
+
+int get_chrlimt_bcct_level(int chr_current)
+{
+        int ret = 0;
+
+        switch (chr_current)
+        {
+        case 250:
+		ret = 3;
+                break;
+        case 500:
+		ret = 2;
+                break;
+        case 1000:
+		ret = 1;
+                break;
+        }
+        return ret;
+}
+
+void set_bcct_log(int bcct_now)
+{
+	int index = 0;
+
+	for(index=0; index<(sizeof(bcct_log.bcct_value)/sizeof(int)); index++)
+	{
+		if(bcct_now == bcct_log.bcct_value[index])
+		{
+			if(bcct_log.bcct_count[index] < 94608000)
+				bcct_log.bcct_count[index]++;
+			break;
+		}
+	}
+}
+
+int bcct_ever = 0;
+//CEI comments end//
+
 /*BQ25896 is the first switch chrager separating input and charge current
 */
 unsigned int set_chr_input_current_limit(int current_limit)
 {
 #ifdef CONFIG_MTK_SWITCH_INPUT_OUTPUT_CURRENT_SUPPORT
 	u32 power_path_enable = 1;
-	CHR_CURRENT_ENUM chr_type_aicr = 0; /* 10uA */
-	CHR_CURRENT_ENUM chr_type_ichg = 0;
+//CEI comments start//
+//	CHR_CURRENT_ENUM chr_type_aicr = 0; /* 10uA */
+//	CHR_CURRENT_ENUM chr_type_ichg = 0;
+//CEI comment end//
 
 	mutex_lock(&g_aicr_access_mutex);
 	if (current_limit != -1) {
+//CEI comments start//
+		bcct_level = get_chrlimt_bcct_level(current_limit);
 		g_bcct_input_flag = 1;
+
+		if(bcct_ever < 47304000)
+			bcct_ever++;
+
+#if 0 //MTK-ORG
 		if (current_limit < 100) {
 			/* limit < 100, turn off power path */
 			current_limit = 0;
@@ -440,6 +605,9 @@ unsigned int set_chr_input_current_limit(int current_limit)
 		}
 
 		g_bcct_input_value = current_limit;
+#endif
+                battery_log(BAT_LOG_CRTI, "[BATTERY][IUSB] LE(K)=> set_chr_input_current_limit (%d)\r\n", current_limit);
+//CEI comments end//
 	} else {
 		/* Enable power path if it is disabled previously */
 		if (g_bcct_input_value == 0) {
@@ -450,10 +618,15 @@ unsigned int set_chr_input_current_limit(int current_limit)
 
 		/* Change to default current setting */
 		g_bcct_input_flag = 0;
+//CEI comments start//
+		bcct_level = 0;
+//CEI comments end//
 	}
 
+//CEI comment start//
 	battery_log(BAT_LOG_CRTI,
-		"[BATTERY] set_chr_input_current_limit (%d)\n", current_limit);
+		"[BATTERY][IUSB] LE(K)=> set_chr_input_current_limit (%d), bcct_level=%d\n", current_limit, bcct_level);
+//CEI comment end//
 
 	mutex_unlock(&g_aicr_access_mutex);
 	return g_bcct_input_flag;
@@ -522,71 +695,6 @@ int mtk_chr_reset_aicr_upper_bound(void)
 {
 	g_aicr_upper_bound = 0;
 	return 0;
-}
-
-int mtk_chr_pd_enable_power_path(unsigned char enable)
-{
-	int ret = 0;
-
-	g_pd_enable_power_path = enable;
-	if (enable && g_bcct_input_flag && (g_bcct_input_value == 0)) {
-		battery_log(BAT_LOG_CRTI,
-			"%s: thermal set power path off, so keep it off\n",
-			__func__);
-		return -EINVAL;
-	}
-
-	ret = battery_charging_control(CHARGING_CMD_ENABLE_POWER_PATH,
-		&enable);
-
-	return ret;
-}
-
-int mtk_chr_enable_chr_type_det(unsigned char en)
-{
-	battery_log(BAT_LOG_CRTI, "%s: enable = %d\n", __func__, en);
-	battery_charging_control(CHARGING_CMD_ENABLE_CHR_TYPE_DET, &en);
-
-	return 0;
-}
-
-int mtk_chr_enable_discharge(bool enable)
-{
-	return battery_charging_control(CHARGING_CMD_ENABLE_DISCHARGE, &enable);
-}
-
-int mtk_chr_enable_hv_charging(bool en)
-{
-	battery_log(BAT_LOG_CRTI, "%s: en = %d\n", __func__, en);
-
-	mutex_lock(&g_hv_charging_mutex);
-	g_enable_hv_charging = en;
-	mutex_unlock(&g_hv_charging_mutex);
-
-	return 0;
-}
-
-bool mtk_chr_is_hv_charging_enable(void)
-{
-	return g_enable_hv_charging;
-}
-
-int mtk_chr_enable_kpoc_shutdown(bool en)
-{
-	if (en)
-		atomic_set(&g_en_kpoc_shdn, 1);
-	else
-		atomic_set(&g_en_kpoc_shdn, 0);
-	return 0;
-}
-
-bool mtk_chr_is_kpoc_shutdown_enable(void)
-{
-	int en = 0;
-
-	en = atomic_read(&g_en_kpoc_shdn);
-
-	return en > 0 ? true : false;
 }
 
 int set_chr_boost_current_limit(unsigned int current_limit)
@@ -774,7 +882,14 @@ void select_charging_current(void)
 #else
 			{
 				g_temp_input_CC_value = batt_cust_data.usb_charger_current;
+				//CEI comment start//
+				//Ibat is not Iusb, it can exceed 500mA, for sync to charging_hw_init CON04 ICHG setting
+				#if 0
 				g_temp_CC_value = batt_cust_data.usb_charger_current;
+				#else
+				g_temp_CC_value = USB_IBAT_CURRENT;
+				#endif
+				//CEI comment end//
 			}
 #endif
 		} else if (BMT_status.charger_type == NONSTANDARD_CHARGER) {
@@ -883,9 +998,40 @@ void select_charging_current_bcct(void)
 	mtk_check_aicr_upper_bound();
 }
 
+#ifdef CONFIG_CHARGER_QNS
+extern int battery_get_qns_current(void);
+#endif
+
+//CEI comment start//
+int adaptive_chrlimt_current(int vchr, int bcct_level_value)
+{
+        int index = 0;
+        int ret = 0;
+
+        for(index=0; index<(sizeof(chrlimit.vchr_thres)/sizeof(int)); index++)
+        {
+                if(vchr < chrlimit.vchr_thres[index])
+                        break;
+        }
+	if ((bcct_level_value > 0) && (bcct_level_value <= 3))
+		ret = chrlimit.chrlimt_current[index][bcct_level_value-1];
+        return ret;
+}
+
+extern int TM_enable;
+//CEI comment end//
+
 static void mtk_select_ichg_aicr(void)
 {
 	kal_bool enable_charger = KAL_TRUE;
+
+#ifdef CONFIG_CHARGER_QNS
+	int qns_current = battery_get_qns_current() * 100;
+#endif
+
+//CEI comment start//
+	int bcct_now = 0;
+//CEI comment end//
 
 	mutex_lock(&g_ichg_aicr_access_mutex);
 
@@ -910,26 +1056,126 @@ static void mtk_select_ichg_aicr(void)
 		battery_log(BAT_LOG_FULL,
 			"[BATTERY] select_charging_current !\n");
 	}
-	#else
-	else if (g_bcct_flag == 1 || g_bcct_input_flag == 1) {
-		select_charging_current();
-		select_charging_current_bcct();
-		battery_log(BAT_LOG_FULL,
-			"[BATTERY] select_charging_curret_bcct !\n");
+#else
+//CEI comment start//
+//	else if (g_bcct_flag == 1 || g_bcct_input_flag == 1) {
+	else if ((g_bcct_flag == 1 || g_bcct_input_flag == 1) && (TM_enable)) {
+
+	int bcct_level_value = bcct_level;
+	int chr_vol = BMT_status.charger_vol;
+	int chr_current_limt = 0;
+
+	select_charging_current();
+//	select_charging_current_bcct(); //MTK ORG
+//CEI add: S//
+	chr_current_limt = adaptive_chrlimt_current(chr_vol, bcct_level_value);
+	if (chr_current_limt != 0)
+	{
+		if ((BMT_status.charger_type == STANDARD_HOST) ||
+			(BMT_status.charger_type == NONSTANDARD_CHARGER))
+		{
+			if(chr_current_limt > CHARGE_CURRENT_500_00_MA / 100)
+			{
+				g_temp_input_CC_value = CHARGE_CURRENT_500_00_MA;
+				g_bcct_input_value = CHARGE_CURRENT_500_00_MA / 100;
+			}
+			else
+			{
+				g_temp_input_CC_value = chr_current_limt *100;
+				g_bcct_input_value = chr_current_limt;
+			}
+		} else if ((BMT_status.charger_type == STANDARD_CHARGER) ||
+			(BMT_status.charger_type == CHARGING_HOST))
+		{
+			if ((chr_current_limt < 350) && (chr_vol > 5500))
+			{
+				g_temp_input_CC_value = CHARGE_CURRENT_350_00_MA;
+				g_bcct_input_value = CHARGE_CURRENT_350_00_MA / 100;
+			}
+			else
+			{
+				g_temp_input_CC_value = chr_current_limt *100;
+				g_bcct_input_value = chr_current_limt;
+			}
+		}
+		else
+		{
+			if(chr_current_limt > CHARGE_CURRENT_500_00_MA / 100)
+			{
+				g_temp_input_CC_value = CHARGE_CURRENT_500_00_MA;
+				g_bcct_input_value = CHARGE_CURRENT_500_00_MA / 100;
+			}
+			else
+			{
+				g_temp_input_CC_value = chr_current_limt *100;
+				g_bcct_input_value = chr_current_limt;
+			}
+		}
+		bcct_now = g_bcct_input_value;
+		battery_log(BAT_LOG_CRTI, "[BATTERY][IUSB] LE(K)=> select_charging_curret_bcct! bcct_level_value=%d, chr_vol=%d, chr_current_limt=%d, bcct_now=%d\n", bcct_level_value, chr_vol, chr_current_limt, bcct_now);
+	}
+	else
+	{
+		bcct_now = 0;
+		battery_log(BAT_LOG_CRTI, "[BATTERY][IUSB] LE(K)=> select_charging_curret! SPECIAL !g_temp_input_CC_value=%d\n", g_temp_input_CC_value);
+	}
+//CEI add: E//
+
+		battery_log(BAT_LOG_CRTI,
+			"[BATTERY][IUSB] LE(K)=> select_charging_curret_bcct !\n");
+//CEI comment end//
 	} else {
+//CEI comment start//
+		bcct_now = 0;
+//CEI comment end//
 		select_charging_current();
-		battery_log(BAT_LOG_FULL,
-			"[BATTERY] select_charging_curret !\n");
+//CEI comment start//
+		battery_log(BAT_LOG_CRTI,
+			"[BATTERY][IUSB] LE(K)=> select_charging_curret !\n");
+//CEI comment end//
 	}
 #endif
+
+#ifdef CONFIG_CHARGER_QNS
+	if  ((qns_current != 0) && (qns_current < g_temp_CC_value)) {
+		battery_log(BAT_LOG_CRTI, "LE(K)=> qns_current (%d) is less than current setting (%d), use %dmA\r\n", qns_current/100, g_temp_CC_value/100, qns_current/100);
+		g_temp_CC_value = qns_current;
+	}
+#endif
+
+//CEI comment start//
+//Alien_battery support
+		if( (g_temp_CC_value > CHARGE_CURRENT_500_00_MA) && (battery_id_invalid == 1))
+		{
+			battery_log(BAT_LOG_CRTI, "LE(K)=> [ALIEN] battery_id_invalid, mtk_select_ichg_aicr org ichg=%dmA, new ichg=%d\r\n", g_temp_CC_value/100, CHARGE_CURRENT_500_00_MA/100);
+			g_temp_CC_value = CHARGE_CURRENT_500_00_MA;
+		}
+//CEI comment end//
+
+	battery_charging_control(CHARGING_CMD_SET_CURRENT,
+		&g_temp_CC_value);
+
+//CEI comment start//
+//Move from above to here
 	battery_log(BAT_LOG_CRTI,
-		"[BATTERY] Default CC mode charging : %d, input current = %d\n",
-		g_temp_CC_value, g_temp_input_CC_value);
+		    "[BATTERY][IUSB] LE(K)=> Default CC mode charging : %d, input current = %d, qns=%d, g_bcct_flag=%d, g_bcct_input_flag=%d, bcct_ever=%d, bcct_now=%d, Vchr=%d, bcct_level=%d, TM_enable=%d\r\n",
+		    g_temp_CC_value, g_temp_input_CC_value, qns_current, g_bcct_flag, g_bcct_input_flag, bcct_ever, bcct_now, BMT_status.charger_vol, bcct_level, TM_enable);
+
+	set_bcct_log(bcct_now);
+	battery_log(BAT_LOG_CRTI,
+		    "[BATTERY][IUSB] LE(K)=> %dmA=%u, %dmA=%u, %dmA=%u, %dmA=%u, %dmA=%u, %dmA=%u, %dmA=%u, %dmA=%u, %dmA=%u\n",
+		    bcct_log.bcct_value[0], bcct_log.bcct_count[0], bcct_log.bcct_value[1], bcct_log.bcct_count[1], bcct_log.bcct_value[2], bcct_log.bcct_count[2], bcct_log.bcct_value[3], bcct_log.bcct_count[3], bcct_log.bcct_value[4], bcct_log.bcct_count[4],
+		    bcct_log.bcct_value[5], bcct_log.bcct_count[5], bcct_log.bcct_value[6], bcct_log.bcct_count[6], bcct_log.bcct_value[7], bcct_log.bcct_count[7], bcct_log.bcct_value[8], bcct_log.bcct_count[8]);
+	battery_log(BAT_LOG_CRTI,
+		    "[BATTERY][IUSB] LE(K)=> %dmA=%u, %dmA=%u, %dmA=%u, %dmA=%u, %dmA=%u, %dmA=%u, %dmA=%u, normal=%u\n\n",
+		    bcct_log.bcct_value[9], bcct_log.bcct_count[9], bcct_log.bcct_value[10], bcct_log.bcct_count[10], bcct_log.bcct_value[11], bcct_log.bcct_count[11], bcct_log.bcct_value[12], bcct_log.bcct_count[12], bcct_log.bcct_value[13], bcct_log.bcct_count[13],
+		    bcct_log.bcct_value[14], bcct_log.bcct_count[14], bcct_log.bcct_value[15], bcct_log.bcct_count[15], bcct_log.bcct_count[16]);
+
+//	g_temp_input_CC_value = CHARGE_CURRENT_200_00_MA;
 
 	battery_charging_control(CHARGING_CMD_SET_INPUT_CURRENT,
 		&g_temp_input_CC_value);
-	battery_charging_control(CHARGING_CMD_SET_CURRENT,
-		&g_temp_CC_value);
+//CEI comment end//
 
 	/* For thermal, they need to enable charger immediately */
 	if (g_temp_CC_value > 0 && g_temp_input_CC_value > 0)
@@ -974,7 +1220,9 @@ static void mtk_select_cv(void)
 #endif
 
 	if (batt_cust_data.high_battery_voltage_support)
-		cv_voltage = BATTERY_VOLT_04_340000_V;
+//CEI comment start//
+		cv_voltage = BATTERY_VOLT_04_304000_V; // MTK ORG=BATTERY_VOLT_04_340000_V
+//CEI comment end//
 	else
 		cv_voltage = BATTERY_VOLT_04_200000_V;
 
@@ -985,6 +1233,32 @@ static void mtk_select_cv(void)
 			__func__, dynamic_cv);
 	}
 
+#if defined(CONFIG_MTK_HAFG_20) && defined(CUSTOM_SOFT_CHARGE_30)
+	if (g_sc30_low_cv_voltage && (cv_voltage > BATTERY_VOLT_04_300000_V))
+		cv_voltage = BATTERY_VOLT_04_300000_V;
+
+	battery_log(BAT_LOG_CRTI, "[SC30] low_cv=%d cv_voltage=%d\n",
+		g_sc30_low_cv_voltage, cv_voltage);
+#endif
+
+//CEI comment start//
+//Alien_battery
+	if(battery_id_invalid)
+	{
+		//It will never goes to here because the condition (g_temp_status != TEMP_POS_10_TO_POS_45); return at the begining
+		if (g_temp_status >= TEMP_POS_45_TO_POS_60)
+			cv_voltage = BATTERY_VOLT_04_000000_V;
+		else
+			cv_voltage = BATTERY_VOLT_04_200000_V;
+
+		battery_log(BAT_LOG_CRTI,
+			"[BATTERY]LE(K)=> [ALIEN] mtk_select_cv(), cv_voltage=%d, g_temp_status=%d\n", cv_voltage, g_temp_status);
+	}
+
+	battery_log(BAT_LOG_CRTI,
+		    "[BATTERY]LE(K)=> %s SET_CV_VOLTAGE=%d, BATT_ID=%d, battery_id_invalid=%d, id_voltage_read=%d g_battery_id_voltage=%d %d %d\n", __func__, cv_voltage,
+		    g_fg_battery_id, battery_id_invalid, id_voltage_read, g_battery_id_voltage[0], g_battery_id_voltage[1], g_battery_id_voltage[2]);
+//CEI comment end//
 	battery_charging_control(CHARGING_CMD_SET_CV_VOLTAGE, &cv_voltage);
 
 #if defined(CONFIG_MTK_HAFG_20)
@@ -1106,7 +1380,10 @@ PMU_STATUS BAT_PreChargeModeAction(void)
 	return PMU_STATUS_OK;
 }
 
-
+//CEI comment start//
+//99%<->100% reqirement
+extern int chg_ever_full;
+//CEI comment end//
 PMU_STATUS BAT_ConstantCurrentModeAction(void)
 {
 	unsigned int led_en = true;
@@ -1128,6 +1405,10 @@ PMU_STATUS BAT_ConstantCurrentModeAction(void)
 		BMT_status.bat_charging_state = CHR_BATFULL;
 		BMT_status.bat_full = KAL_TRUE;
 		g_charging_full_reset_bat_meter = KAL_TRUE;
+//CEI comment start//
+//99%<->100% reqirement
+		chg_ever_full = 1;
+//CEI comment end//
 	}
 
 	return PMU_STATUS_OK;
@@ -1236,6 +1517,290 @@ PMU_STATUS BAT_BatteryStatusFailAction(void)
 	return PMU_STATUS_OK;
 }
 
+//CEI comment start//
+//Add more charing related logs
+int fgr = -1;
+int f_rname = 0;
+extern void fgr_get(int fgr);
+extern int get_FG_Current(void);
+extern int data_log_level;
+extern int fg_w_avg_delta;
+extern int get_car_tune_value(void);
+
+int calc_fgr(void)
+{
+	int ret_car = 117;
+	int w_avg_delta = fg_w_avg_delta;
+
+	if ( (w_avg_delta >= 7) && (w_avg_delta < 10) )
+		ret_car = 110;
+	if ( (w_avg_delta >= 10) && (w_avg_delta < 13) )
+		ret_car = 107;
+	else if ( (w_avg_delta >= 13) && (w_avg_delta < 16) )
+		ret_car = 104;
+	else if ( w_avg_delta >= 16 )
+		ret_car = 101;
+
+	return ret_car;
+}
+
+//=========//
+#define SWITCHING_THR (7)
+#define SAMPLE_NUM (180)
+#define DATA_FILTER_MAX (1950)
+#define DATA_FILTER_MIN (550)
+#define BQ_SCALE (50)
+#define BQ_CASE_NUM ((DATA_FILTER_MAX / BQ_SCALE) + 1)
+#define FILTER_VAL (30)
+#define VALID_SAMPLE_NUM (80)
+#define VALID_BQ_CASE_SAMPLE_NUM (6)
+#define IGN_SAMPLE_NUM (5)
+
+int bq_sample[SAMPLE_NUM] = {0};
+int fg_sample[SAMPLE_NUM] = {0};
+int sample_idx = 0;
+
+int fg_w_avg_delta = 0;
+int fg_avg_delta = 0;
+int fg_check_status = 0;
+int fg_n_case = 0;
+int fg_a_case = 0;
+
+int calculate_delta(void)
+{
+	int bq_case_sample[SAMPLE_NUM] = {0};
+	int fg_delta[BQ_CASE_NUM] = {0};
+	int fg_delta_idx[BQ_CASE_NUM] = {0};
+	int bq_case_i = 0;
+	int bq_i = 0, fg_i = 0;
+	int sort_i = 0, sort_j = 0, sort_tmp_val = 0;
+	int avg_delta_idx = 0;
+	int valid_sample = 0;
+	int fg_check_state = 0;
+	int ign_sample = 0;
+
+	battery_log(BAT_LOG_FULL, "CHIHI(K)=> calculate_delta() enter\n");
+
+	sample_idx = 0;
+	fg_avg_delta = 0;
+	fg_w_avg_delta = 0;
+
+	for (bq_case_i = 0; bq_case_i < BQ_CASE_NUM; bq_case_i ++)
+	{
+		fg_delta[bq_case_i] = 0;
+		fg_delta_idx[bq_case_i]=0;
+		for (bq_i = 0; bq_i < SAMPLE_NUM; bq_i ++)
+		{
+			if ((bq_sample[bq_i] / BQ_SCALE) == bq_case_i)
+			{
+				bq_case_sample[fg_delta_idx[bq_case_i]] = fg_sample[bq_i];
+				fg_delta_idx[bq_case_i] ++;
+			}
+		}
+
+		if (fg_delta_idx[bq_case_i] < 1)
+		{
+			continue;
+		}
+
+		for (sort_i = 0; sort_i < (fg_delta_idx[bq_case_i] - 1); sort_i ++)
+		{
+			for(sort_j = (sort_i + 1); sort_j < (fg_delta_idx[bq_case_i]); sort_j++)
+			{
+				if (bq_case_sample[sort_j] < bq_case_sample[sort_i])
+				{
+					sort_tmp_val = bq_case_sample[sort_i];
+					bq_case_sample[sort_i] = bq_case_sample[sort_j];
+					bq_case_sample[sort_j] = sort_tmp_val;
+				}
+			}
+		}
+
+		for( fg_i = fg_delta_idx[bq_case_i]; fg_i < (((fg_delta_idx[bq_case_i] + 9) / 10) * 10); fg_i ++)
+		{
+			bq_case_sample[fg_i] = -1;
+		}
+		for( fg_i = 0; fg_i < ((fg_delta_idx[bq_case_i] + 9) / 10); fg_i ++)
+		{
+			battery_log(BAT_LOG_FULL, "CHIHI(K)=> %4d %4d %4d %4d %4d %4d %4d %4d %4d %4d \n",
+				bq_case_sample[fg_i * 10], bq_case_sample[fg_i * 10 + 1], bq_case_sample[fg_i * 10 + 2], bq_case_sample[fg_i * 10 + 3], bq_case_sample[fg_i * 10 + 4],
+				bq_case_sample[fg_i * 10 + 5], bq_case_sample[fg_i * 10 + 6], bq_case_sample[fg_i * 10 + 7], bq_case_sample[fg_i * 10 + 8], bq_case_sample[fg_i * 10 + 9]);
+		}
+
+		if (fg_delta_idx[bq_case_i] >= VALID_BQ_CASE_SAMPLE_NUM)
+		{
+			ign_sample = ((fg_delta_idx[bq_case_i] * IGN_SAMPLE_NUM) / 100);
+			for( fg_i = ign_sample; fg_i < (fg_delta_idx[bq_case_i] - ign_sample); fg_i ++)
+			{
+				fg_delta[bq_case_i] += (bq_case_sample[fg_i] - (BQ_SCALE * bq_case_i));
+				valid_sample ++;
+			}
+			fg_delta[bq_case_i] = (((fg_delta[bq_case_i] * 100) / (fg_delta_idx[bq_case_i] - (ign_sample * 2))) / (BQ_SCALE * bq_case_i));
+			fg_avg_delta += fg_delta[bq_case_i];
+			fg_w_avg_delta += (fg_delta[bq_case_i] * (fg_delta_idx[bq_case_i] - (ign_sample * 2)));
+			avg_delta_idx ++;
+			battery_log(BAT_LOG_FULL, "CHIHI(K)=> bq:%d sample=%d ign_sample:%d fg_delta:%d fg_w_delta:%d (delta:%d, w_elta:%d)\n", (int)(BQ_SCALE * bq_case_i), fg_delta_idx[bq_case_i], ign_sample, fg_delta[bq_case_i], (fg_delta[bq_case_i] * (fg_delta_idx[bq_case_i] - (ign_sample * 2))), fg_avg_delta, fg_w_avg_delta);
+		}
+		else
+		{
+			fg_delta[bq_case_i] = 0;
+			battery_log(BAT_LOG_FULL, "CHIHI(K)=> bq:%d sample=%d Ignore! \n", (int)(BQ_SCALE * bq_case_i), fg_delta_idx[bq_case_i]);
+		}
+	}
+
+	battery_log(BAT_LOG_FULL, "CHIHI(K)=> avg_delta:%d (delta:%d index:%d) \n", (fg_avg_delta / avg_delta_idx), fg_avg_delta, avg_delta_idx);
+	battery_log(BAT_LOG_FULL, "CHIHI(K)=> w_avg_delta:%d (w_delta:%d valid_sample:%d) \n", (fg_w_avg_delta / valid_sample), fg_w_avg_delta, valid_sample);
+	if( valid_sample >= VALID_SAMPLE_NUM && avg_delta_idx > 0 )
+	{
+		fg_avg_delta = fg_avg_delta / avg_delta_idx;
+		fg_w_avg_delta = fg_w_avg_delta / valid_sample;
+		if( fg_w_avg_delta >= SWITCHING_THR )
+		{
+			fg_check_state = 2;
+			fg_a_case ++;
+			battery_log(BAT_LOG_FULL, "CHIHI(K)=> Average(W) Delta:%d [a] (n:%d, a:%d) delta:%d\n", fg_w_avg_delta, fg_n_case, fg_a_case, fg_avg_delta);
+		}
+		else
+		{
+			fg_check_state = 1;
+			fg_n_case ++;
+			battery_log(BAT_LOG_FULL, "CHIHI(K)=> Average(W) Delta:%d [n] (n:%d, a:%d) delta:%d\n", fg_w_avg_delta, fg_n_case, fg_a_case, fg_avg_delta);
+		}
+	}
+	else
+	{
+		battery_log(BAT_LOG_FULL, "CHIHI(K)=> Ignore!  \n");
+	}
+
+	battery_log(BAT_LOG_FULL, "CHIHI(K)=> calculate_delta() leave\n");
+	return (fg_check_state);
+
+}
+
+int delta_checking(int bq, int fg)
+{
+	int s_data = 0, l_data = 0;
+	int fg_check_state = 0;
+
+	battery_log(BAT_LOG_FULL, "CHIH(K)=> delta_checking() enter: bq=%d, fg=%d\n", bq, fg);
+
+	if (fg >= 0 || bq <= 0)
+	{
+		battery_log(BAT_LOG_FULL, "CHIH(K)=> delta_checking() discharging\n");
+		return (fg_check_state);
+	}
+
+	if (bq > DATA_FILTER_MAX || bq < DATA_FILTER_MIN )
+	{
+		battery_log(BAT_LOG_FULL, "CHIH(K)=> delta_checking() Invalid data! (bq > %d or bq < %d)\n", (int)((DATA_FILTER_MAX)-(BQ_SCALE)), (int)(DATA_FILTER_MIN));
+		return (fg_check_state);
+	}
+
+	fg = abs(fg);
+	if (bq < fg)
+	{
+		s_data = bq;
+		l_data = fg;
+	}
+	else
+	{
+		s_data = fg;
+		l_data = bq;
+	}
+	if ((s_data * (100 + FILTER_VAL)) < (l_data * 100))
+	{
+		battery_log(BAT_LOG_FULL, "CHIH(K)=> delta_checking() Invalid data! (delta > %d \n", (int)(FILTER_VAL));
+		return (fg_check_state);
+	}
+
+	bq_sample[sample_idx] = bq;
+	fg_sample[sample_idx] = fg;
+	sample_idx ++;
+	battery_log(BAT_LOG_FULL, "CHIH(K)=> delta_checking() valid data! bq=%d, fg=%d sample_idx:%d\n", bq, fg, sample_idx);
+
+	if (sample_idx >= SAMPLE_NUM)
+	{
+		fg_check_state = calculate_delta();
+	}
+
+	return (fg_check_state);
+
+}
+
+extern int get_fcr(void);
+extern int cat_rtc_info(void);
+extern int echo_rtc_info(int val);
+extern int car_value_rtc;
+extern int car_value_rtc_post;
+
+void dump_chg_data(void)
+{
+	unsigned int chg_data = 0;
+	int f_data_signed = 0;
+	static int cat_rtc_value = 0;
+
+	battery_charging_control(CHARGING_CMD_DUMP_REGISTER_GET_DATA, &chg_data);
+
+	if ((data_log_level != 0) && (fgr == -1))
+	{
+		if(car_value_rtc != 0)
+		{
+			//Could be marked later: S
+			//f_data_signed = get_FG_Current()/10;
+			//battery_log(BAT_LOG_CRTI, "LE(K)=> APTB(A) fcr=%d, cat_rtc_value=%d, value_rtc=%d, val rtc post=%d, bq=%d, fg=%d\n", get_fcr(), cat_rtc_value, car_value_rtc, car_value_rtc_post, chg_data, f_data_signed);
+			//Could be marked later: E
+		}
+		else
+		{
+			f_data_signed = get_FG_Current()/10;
+
+			fg_check_status = delta_checking(chg_data, f_data_signed);
+			battery_log(BAT_LOG_FULL, "LE(K)=> APTB(B) data_log_level=%d, fg_check_status=%d, f_rname=%d, fgr=%d, fcr=%d, cat_rtc_value=%d, value_rtc=%d, val rtc post=%d\n", data_log_level, fg_check_status, f_rname, fgr, get_fcr(), cat_rtc_value, car_value_rtc, car_value_rtc_post);
+
+			if ( (fg_check_status != 0) && ((data_log_level == 2) || (data_log_level == 3)) )
+			{
+				if (fg_check_status == 1)
+				{
+					if(fgr == -1)
+					{
+						f_rname = 1;
+						fgr = get_car_tune_value();
+						if(data_log_level == 3)
+						{
+							fgr_get(fgr);
+							if( (g_platform_boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT) ||
+								(g_platform_boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT) )
+							{
+								echo_rtc_info(fgr);
+								cat_rtc_value=cat_rtc_info();
+							}
+						}
+					}
+				}
+				else if (fg_check_status == 2)
+				{
+					if(fgr == -1)
+					{
+						f_rname = 2;
+						fgr = calc_fgr();
+						if(data_log_level == 3)
+						{
+							fgr_get(fgr);
+							if( (g_platform_boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT) ||
+								(g_platform_boot_mode == KERNEL_POWER_OFF_CHARGING_BOOT) )
+							{
+								echo_rtc_info(fgr);
+								cat_rtc_value=cat_rtc_info();
+							}
+						}
+					}
+				}
+				battery_log(BAT_LOG_FULL, "LE(K)=> APTB: fgr=%d, zfg_w_avg_delta=%d, cat_rtc_value=%d\n", fgr, fg_w_avg_delta, cat_rtc_value);
+			}
+		}
+	}
+}
+//CEI comment end//
 
 void mt_battery_charging_algorithm(void)
 {
@@ -1271,5 +1836,7 @@ void mt_battery_charging_algorithm(void)
 		break;
 	}
 
-	battery_charging_control(CHARGING_CMD_DUMP_REGISTER, NULL);
+//CEI comment start//
+	dump_chg_data();
+//CEI comment end//
 }

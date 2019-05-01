@@ -280,12 +280,28 @@ static unsigned int is_chr_det(void)
 }
 #endif
 
+//CEI comment start//
+//JEITA enable
+static int charging_set_cv_voltage(void *data);
+extern BATTERY_VOLTAGE_ENUM global_cv_voltage;
+//CEI comment end//
+
 static int charging_hw_init(void *data)
 {
 	int status = STATUS_OK;
 
 	bq25890_config_interface(bq25890_COND, 0x1, 0x1, 7);	/* vindpm vth 0:relative 1:absolute */
 
+//CEI comment start//
+//Iterm (IEOC) will be reset back to 256mA after device suspend longer than charger IC Wdog time
+	bq25890_config_interface(bq25890_CON5, 0x1, 0x7, 0);	/* termianation current default 128mA */
+//CEI comment end//
+
+//CEI comment start
+//Safety_timer
+//Safety Timer will be reset back to Enabled after device suspend longer than charger IC Wdog time
+	bq25890_config_interface(bq25890_CON7, 0x0, 0x1, 3);	/* disable charging timer safety timer */
+//CEI comment end
 
 #if defined(MTK_WIRELESS_CHARGER_SUPPORT)
 	if (wireless_charger_gpio_number != 0) {
@@ -325,6 +341,20 @@ static int charging_dump_register(void *data)
 
 	return status;
 }
+
+//CEI comment start//
+static int charging_dump_register_get_data(void *data)
+{
+	int status = STATUS_OK;
+	unsigned int val;
+
+	battery_log(BAT_LOG_FULL, "charging_dump_register\r\n");
+	val = bq25890_dump_register_get_data();
+	*(int *) data = (int)val;
+
+	return status;
+}
+//CEI comment end//
 
 static int charging_enable(void *data)
 {
@@ -822,6 +852,22 @@ static int charging_set_vindpm(void *data)
 	return status;
 }
 
+//CEI comment start//
+static int charging_set_default_dpm(void *data)
+{
+	unsigned int status = STATUS_OK;
+	unsigned int v = *(unsigned int *) data;
+	unsigned int vindpm = (v-2600)/100;
+
+	bq25890_set_force_vindpm(1);
+	bq25890_set_vindpm(vindpm);
+
+	battery_log(BAT_LOG_CRTI, "LE(K)=> charging_set_default_dpm %d %d\n", v, vindpm);
+
+	return status;
+}
+//CEI comment end//
+
 static int charging_set_vbus_ovp_en(void *data)
 {
 	int status = STATUS_OK;
@@ -1048,13 +1094,30 @@ static int charging_sw_init(void *data)
 	/*CC mode */
 	bq25890_config_interface(bq25890_CON4, 0x08, 0x7F, 0);	/* ICHG (0x08)512mA --> (0x20)2.048mA */
 	/*Vbus current limit */
-	bq25890_config_interface(bq25890_CON0, 0x3F, 0x3F, 0);	/* input current limit, IINLIM, 3.25A */
+//CEI comment start//
+//Set IINLIM at 500mA
+	bq25890_config_interface(bq25890_CON0, 0x08, 0x3F, 0);	/* input current limit, IINLIM, 3.25A */ //MTK ORG=0x3F
+//CEI comment end//
+
 
 	/* absolute VINDPM = 2.6 + code x 0.1 =4.5V;K2 24261 4.452V */
-	bq25890_config_interface(bq25890_COND, 0x13, 0x7F, 0);
+//CEI comment start//
+	bq25890_config_interface(bq25890_COND, 0x12, 0x7F, 0); //MTK ORG=0x13
+//CEI comment end//
 
 	/*CV mode */
-	bq25890_config_interface(bq25890_CON6, 0x20, 0x3F, 2);	/* VREG=CV 4.352V (default 4.208V) */
+//CEI comment start//
+//VREG jumps will cause charging full detection issue for 4.2V battery
+//JEITA enable, Alien_battery
+#if !defined(CONFIG_MTK_JEITA_STANDARD_SUPPORT)
+	if(battery_id_invalid == 0)
+		bq25890_config_interface(bq25890_CON6, 0x1D, 0x3F, 2);	/* VREG=CV 4.304V (default 4.208V) */
+	else
+		bq25890_config_interface(bq25890_CON6, 0x16, 0x3F, 2);	/* VREG=CV 4.192V (default 4.208V) */
+#else
+	charging_set_cv_voltage(&global_cv_voltage);
+#endif
+//CEI commend end//
 
 	/* upmu_set_rg_vcdt_hv_en(0); */
 
@@ -1065,18 +1128,26 @@ static int charging_sw_init(void *data)
 	bq25890_config_interface(bq25890_CON2, 0x0, 0x1, 1);	/* disable DPDM detection */
 
 	bq25890_config_interface(bq25890_CON7, 0x1, 0x3, 4);	/* enable  watch dog 40 secs 0x1 */
-	bq25890_config_interface(bq25890_CON7, 0x1, 0x1, 3);	/* enable charging timer safety timer */
+//CEI comment start
+//Safety_timer
+	bq25890_config_interface(bq25890_CON7, 0x0, 0x1, 3);	/* disable charging timer safety timer */ //MTK ORG=0x1
+//CEI comment end
 	bq25890_config_interface(bq25890_CON7, 0x2, 0x3, 1);	/* charging timer 12h */
 
 	bq25890_config_interface(bq25890_CON2, 0x0, 0x1, 5);	/* boost freq 1.5MHz when OTG_CONFIG=1 */
 	bq25890_config_interface(bq25890_CONA, 0x7, 0xF, 4);	/* boost voltagte 4.998V default */
-	bq25890_config_interface(bq25890_CONA, 0x3, 0x7, 0);	/* boost current limit 1.3A */
+//CEI comment start//
+// Boost current
+	bq25890_config_interface(bq25890_CONA, 0x1, 0x7, 0);	/* boost current limit 0.75A */ //MTK ORG=0x3
+//CEI comment end//
 #ifdef CONFIG_MTK_BIF_SUPPORT
 	bq25890_config_interface(bq25890_CON8, 0x0, 0x7, 5);	/* disable ir_comp_resistance */
 	bq25890_config_interface(bq25890_CON8, 0x0, 0x7, 2);	/* disable ir_comp_vdamp */
 #else
-	bq25890_config_interface(bq25890_CON8, 0x4, 0x7, 5);	/* enable ir_comp_resistance */
-	bq25890_config_interface(bq25890_CON8, 0x6, 0x7, 2);	/* enable ir_comp_vdamp */
+//CEI comment start//
+	bq25890_config_interface(bq25890_CON8, 0x0, 0x7, 5);	/* enable ir_comp_resistance */ //MTK ORG=0x4
+	bq25890_config_interface(bq25890_CON8, 0x0, 0x7, 2);	/* enable ir_comp_vdamp */ //MTK ORG=0x6
+//CEI comment end//
 #endif
 	bq25890_config_interface(bq25890_CON8, 0x3, 0x3, 0);	/* thermal 120 default */
 
@@ -1116,8 +1187,9 @@ static int charging_set_hiz_swchr(void *data)
 	en = *(unsigned int *) data;
 	if (en == 1)
 		vindpm = 0x7F;
-	else
-		vindpm = 0x13;
+	else //CEI comment start//
+		vindpm = 0x12; //MTK ORG= 0x13
+//CEI comment end//
 
 	charging_set_vindpm(&vindpm);
 	/*bq25890_set_en_hiz(en);*/
@@ -1158,7 +1230,9 @@ static int charging_set_vindpm_voltage(void *data)
 
 static int charging_set_ta20_reset(void *data)
 {
-	bq25890_set_vindpm(0x13);
+//CEI comment start//
+	bq25890_set_vindpm(0x12); // MTK ORG= 0x13
+//CEI comment end//
 	bq25890_set_ichg(8);
 
 	bq25890_set_ico_en_start(0);
@@ -1190,8 +1264,9 @@ static int charging_set_ta20_current_pattern(void *data)
 	int flag;
 	CHR_VOLTAGE_ENUM chr_vol = *(CHR_VOLTAGE_ENUM *) data;
 
-
-	bq25890_set_vindpm(0x13);
+//CEI comment start//
+	bq25890_set_vindpm(0x12); // MTK ORG= 0x13
+//CEI comment end//
 	bq25890_set_ichg(8);
 	bq25890_set_ico_en_start(0);
 
@@ -1347,8 +1422,9 @@ static int charging_enable_power_path(void *data)
 
 	enable = *((unsigned int *)data);
 	bq25890_set_force_vindpm(1);
-	if (enable)
-		bq25890_set_vindpm(0x13);
+	if (enable) //CEI comment start//
+		bq25890_set_vindpm(0x12); // MTK ORG= 0x13
+//CEI comment end//
 	else
 		bq25890_set_vindpm(0x7F);
 
@@ -1485,6 +1561,10 @@ static int (*const charging_func[CHARGING_CMD_NUMBER]) (void *data) = {
 	charging_set_pwrstat_led_en, charging_get_ibus, charging_get_vbus,
 	charging_reset_dc_watch_dog_timer, charging_run_aicl, charging_set_ircmp_resistor,
 	charging_set_ircmp_volt_clamp,
+//CEI comment start//
+	charging_set_default_dpm,
+	charging_dump_register_get_data
+//CEI comment end//
 };
 
 /*
