@@ -15,9 +15,7 @@
 #define _MT_PMIC_UPMU_SW_MT6353_H_
 #include <mach/upmu_hw.h>
 
-//CEI comment start// //Chcek//
 #define AUXADC_SUPPORT_IMM_CURRENT_MODE
-//CEI comment end//
 /*#define BATTERY_DTS_SUPPORT*/
 #define BATTERY_SW_INIT
 #if defined(CONFIG_MTK_PMIC_CHIP_MT6353)

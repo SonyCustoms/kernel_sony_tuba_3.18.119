@@ -2,7 +2,7 @@
 # Makefile for the linux memory manager.
 #
 
-#subdir-ccflags-y += -Werror
+subdir-ccflags-y += -Werror
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
 
 # Since __builtin_frame_address does work as used, disable the warning.

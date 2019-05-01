@@ -24,9 +24,7 @@
 #else
 #include <mach/upmu_hw.h>
 
-//CEI comment start//
-//#define AUXADC_SUPPORT_IMM_CURRENT_MODE //marked
-//CEI comment end//
+#define AUXADC_SUPPORT_IMM_CURRENT_MODE
 /*#define BATTERY_DTS_SUPPORT*/
 #define RBAT_PULL_UP_VOLT_BY_BIF
 #define BATTERY_SW_INIT
