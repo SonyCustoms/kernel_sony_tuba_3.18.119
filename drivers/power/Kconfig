@@ -103,6 +103,10 @@ config BATTERY_DS2781
 
 	  If you are unsure, say N.
 
+config CHARGER_QNS
+	bool "QNS support"
+	default n
+
 config BATTERY_DS2782
 	tristate "DS2782/DS2786 standalone gas-gauge"
 	depends on I2C
