@@ -95,8 +95,6 @@ ifneq ($(CONFIG_MTK_IMGSENSOR),)
 obj-y+= imgsensor/src/
 endif
 obj-$(CONFIG_MTK_LENS)   += lens/
-obj-$(CONFIG_MTK_FLASHLIGHT)	+= flashlight/src/
-obj-$(CONFIG_RT_FLASHLIGHT)	+= flashlight/richtek/
 ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/met_drv/),)
 obj-$(CONFIG_MTK_MET) += met_drv/
 endif
@@ -173,20 +171,4 @@ obj-$(CONFIG_RT_REGMAP) += rt-regmap/
 obj-$(CONFIG_CUSTOM_KERNEL_IRAF) += iraf/
 obj-$(CONFIG_CUSTOM_KERNEL_SNLED) += snled/
 obj-$(CONFIG_CUSTOM_KERNEL_HALL)	+= hall/
-
-ifeq ($(strip $(AGOLD_HW_COMPATIBLE)),yes)
-obj-y += agold_hw_compatible/
-endif
-
-ifeq ($(strip $(AGOLD_CAMERA_VERSION)),yes)
-obj-y	+=  agold_cam_version/
-endif
-
-ifeq ($(strip $(AGOLD_BOARD_VERSION)),yes)
-obj-y	+=  agold_board_version/
-endif
-
-ifeq ($(strip $(AGOLD_HARDWARE_INFO)),yes)
-obj-y	+=  agold_pm_info/
-endif
 

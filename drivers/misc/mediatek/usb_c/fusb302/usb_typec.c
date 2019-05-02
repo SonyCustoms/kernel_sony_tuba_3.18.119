@@ -105,10 +105,6 @@ static CCTermType CC2TermDeb;	/* Debounced CC2 termination value */
 static USBTypeCCurrent SinkCurrent;	/* Variable to indicate the current capability we have received */
 static USBTypeCCurrent SourceCurrent;	/* Variable to indicate the current capability we are broadcasting */
 
-//[xfl][agold][20160301][start]
-static int smt_blnCCPinIsCC1;
-static int smt_blnCCPinIsCC2;
-//[xfl][agold][20160301][end]
 
 /*******************************************************************************
  * Function:        InitializeFUSB300Variables
@@ -717,10 +713,6 @@ void StateMachineAttachedSource(void)
 		}
 	}
 
-	//[agold][xfl][20160301][start]
-	smt_blnCCPinIsCC1 = blnCCPinIsCC1;
-	smt_blnCCPinIsCC2 = blnCCPinIsCC2;
-	//[agold][xfl][20160301][end]
 }
 
 void StateMachineTryWaitSnk(void)
@@ -2686,49 +2678,6 @@ static int fusb300_i2c_resume(struct i2c_client *client)
 	return 0;
 }
 
-//[agold][xfl][20160229][start]
-ssize_t typec_smt_read(struct file *file, char __user *buffer, size_t count, loff_t *ppos)
-{
-	int val = 0;
-    int len = 0;
-	int err = -1;
-	char *page = NULL;
-    char *ptr = NULL;
-
-	page = kmalloc(PAGE_SIZE, GFP_KERNEL);	
-	if (!page) 
-	{		
-		kfree(page);		
-		return -ENOMEM;	
-	}
-
-    ptr = page;
-
-	val = fusb300_i2c_r_reg(typec_client, 1);
-	len = sprintf(ptr, "%02x%x%x", val, smt_blnCCPinIsCC1, smt_blnCCPinIsCC2);	
-
-	 	
-	if(*ppos >= len)
-	{		
-		kfree(page); 		
-		return 0; 	
-	}	
-	err = copy_to_user(buffer,(char *)page,len); 			
-	*ppos += len; 	
-	if(err) 
-	{		
-	    kfree(page); 		
-		return err; 	
-	}	
-	kfree(page); 	
-	return len;	
-}
-
-static const struct file_operations typec_smt_proc_fops = {
-	.read = typec_smt_read,
-};
-//[agold][xfl][20160229][end]
-
 static int fusb300_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct usbtypc *typec;
@@ -2779,10 +2728,6 @@ static int fusb300_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	usb3_switch_init(typec);
 	fusb300_eint_init(typec);
 	fusb_printk(K_INFO, "%s %x\n", __func__, fusb300_i2c_r_reg(client, 0x1));
-
-	//[agold][xfl][20160229][start]
-	proc_create("agold_typec_smt", 0644, NULL,&typec_smt_proc_fops);
-	//[agold][xfl][20160229][end]
 
 	/*precheck status */
 	/* StateMachineFUSB300(typec); */

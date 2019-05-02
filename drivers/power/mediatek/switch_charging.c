@@ -459,9 +459,9 @@ signed int check_if_jeita_current_limit(void)
 bool get_usb_current_unlimited(void)
 {
 	if (BMT_status.charger_type == STANDARD_HOST || BMT_status.charger_type == CHARGING_HOST)
-		return usb_unlimited;
+//		return usb_unlimited;
 
-		return false;
+		return 0;
 }
 
 void set_usb_current_unlimited(bool enable)

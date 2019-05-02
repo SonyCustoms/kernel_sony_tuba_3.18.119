@@ -233,8 +233,7 @@ static CLK_BUF_SWCTRL_STATUS_T  clk_buf_swctrl[CLKBUF_NUM] = {
 #else
 	CLK_BUF_SW_ENABLE,
 	CLK_BUF_SW_DISABLE,
-	CLK_BUF_SW_ENABLE,
-	CLK_BUF_SW_ENABLE //agold shipeilong
+	CLK_BUF_SW_ENABLE
 #endif
 };
 
@@ -465,10 +464,6 @@ bool clk_buf_ctrl(enum clk_buf_id id, bool onoff)
 
 	if ((id == CLK_BUF_NFC) && (CLK_BUF3_STATUS == CLOCK_BUFFER_HW_CONTROL))
 		return false;
-	//agold shipeilong delete start
-	//if ((id == CLK_BUF_AUDIO) && (CLK_BUF4_STATUS == CLOCK_BUFFER_HW_CONTROL))
-	//	return false;
-    //agold end
 #if 0
 	/* for bring-up */
 	clk_buf_warn("clk_buf_ctrl is disabled for bring-up\n");

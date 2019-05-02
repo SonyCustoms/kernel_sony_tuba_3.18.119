@@ -37,10 +37,6 @@ static ssize_t led_delay_on_store(struct device *dev,
 	if (ret)
 		return ret;
 	
-	//[agold][xfl][20160107][start]
-	led_cdev->blink_set(led_cdev, &state, &led_cdev->blink_delay_off);
-	//led_blink_set(led_cdev, &state, &led_cdev->blink_delay_off);
-	//[agold][xfl][20160107][end]
 	led_cdev->blink_delay_on = state;
 
 	return size;
@@ -65,10 +61,6 @@ static ssize_t led_delay_off_store(struct device *dev,
 	if (ret)
 		return ret;
 
-	//[agold][xfl][20160107][start]
-	led_cdev->blink_set(led_cdev, &led_cdev->blink_delay_on, &state);
-	//led_blink_set(led_cdev, &led_cdev->blink_delay_on, &state);
-	//[agold][xfl][20160107][end]
 	led_cdev->blink_delay_off = state;
 
 	return size;
