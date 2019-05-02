@@ -28,13 +28,12 @@
 
 #define mtktspmic_info(fmt, args...)   pr_debug("[Power/PMIC_Thermal] " fmt, ##args)
 
-
+//CEI comment start//
 #define mtktspmic_dprintk(fmt, args...)   \
 do {										\
-	if (mtktspmic_debug_log) {				\
 		pr_debug("[Power/PMIC_Thermal] " fmt, ##args);\
-	}										\
 } while (0)
+//CEI comment end//
 
 #define mtktstsx_dprintk(fmt, args...)  pr_debug("[TSX_Thermal] " fmt, ##args)
 

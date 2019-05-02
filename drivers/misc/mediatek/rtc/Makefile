@@ -47,7 +47,7 @@ endif
 MDP_COMMON_FOLDER:= ./
 
 #Top level common code
-obj-$(CONFIG_MTK_RTC) += mtk_rtc_common.o mtk_rtc_hal_common.o
+obj-$(CONFIG_MTK_RTC) += mtk_rtc_common.o mtk_rtc_hal_common.o mtk_rtc_tickstamp.o
 
 MTK_MDI_IP_SRC:= $(MDI_IP_FOLDER)/
 

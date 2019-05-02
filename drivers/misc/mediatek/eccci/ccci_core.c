@@ -38,6 +38,31 @@
 #include "mdee_ctl.h"
 static void *dev_class;
 
+//CEI comment start//
+extern int mt_set_gpio_mode(unsigned long pin, unsigned long mode);
+extern int mt_set_gpio_driving(unsigned long pin, unsigned long strength);
+extern int mt_set_gpio_dir(unsigned long pin, unsigned long dir);
+extern int mt_get_gpio_dir(unsigned long pin);
+extern int mt_get_gpio_out(unsigned long pin);
+extern int mt_set_gpio_out(unsigned long pin, unsigned long output);
+extern int mt_get_gpio_in(unsigned long pin);
+extern int mt_set_gpio_ies(unsigned long pin, unsigned long enable);
+extern int mt_set_gpio_smt(unsigned long pin, unsigned long enable);
+extern int mt_set_gpio_slew_rate(unsigned long pin, unsigned long enable);
+extern int mt_set_gpio_pull_enable(unsigned long pin, unsigned long enable);
+extern int mt_set_gpio_pull_select(unsigned long pin, unsigned long select);
+extern int mt_set_gpio_pull_resistor(unsigned long pin, unsigned long resistors);
+
+#ifndef GPIO46
+#define GPIO46 46
+#endif
+#ifndef GPIO45
+#define GPIO45 45
+#endif
+#define GPIO_MODE_1 1
+#define GPIO_PULL_UP 1
+//CEI comment end//
+
 /* used for throttling feature - start */
 unsigned long ccci_modem_boot_count[5];
 unsigned long ccci_get_md_boot_count(int md_id)
@@ -60,7 +85,7 @@ char *ccci_get_ap_platform(void)
 #ifndef CCCI_LOG_LEVEL
 #define CCCI_LOG_LEVEL 0
 #endif
-unsigned int ccci_debug_enable = CCCI_LOG_LEVEL;
+unsigned int ccci_debug_enable = 5/*CCCI_LOG_LEVEL*/;
 
 int boot_md_show(int md_id, char *buf, int size)
 {
@@ -286,6 +311,33 @@ int ccci_scp_ipi_send(int md_id, int op_id, void *data)
 
 
 /* ------------------------------------------------------------------------- */
+//CEI comment start//
+extern int project_id_with_hw_id(void);
+extern int g_project_id;
+
+#if 1
+static void config_gpio_hotswap(void){
+
+	int project_id = g_project_id;
+
+        CCCI_ERROR_LOG(0, "ccci_core", "config_gpio_hotswap  project_id = %d\n", project_id);
+
+        if( (project_id == 0x1) || (project_id == 0x5)) // Dual SIM
+        {
+            mt_set_gpio_mode(GPIO45, GPIO_MODE_1);
+            mt_set_gpio_pull_select(GPIO45, GPIO_PULL_UP);
+            CCCI_ERROR_LOG(0, "ccci_core","[CEI] DS image, set gpio %d mode %d, set pull %d, project_id=%d\n", GPIO45, GPIO_MODE_1, GPIO_PULL_UP, project_id);
+        }
+        else // Single SIM
+        {
+            mt_set_gpio_mode(GPIO46, GPIO_MODE_1);
+            mt_set_gpio_pull_select(GPIO46, GPIO_PULL_UP);
+            CCCI_ERROR_LOG(0, "ccci_core","[CEI] SS image, set gpio %d mode %d, set pull %d, project_id=%d\n", GPIO46, GPIO_MODE_1, GPIO_PULL_UP, project_id);
+        }
+}
+#endif
+//CEI comment end//
+
 static int __init ccci_init(void)
 {
 	CCCI_INIT_LOG(-1, CORE, "ccci core init\n");
@@ -300,6 +352,11 @@ static int __init ccci_init(void)
 #ifdef FEATURE_MTK_SWITCH_TX_POWER
 	swtp_init(0);
 #endif
+
+//CEI comment start//
+        config_gpio_hotswap();
+//CEI comment end//
+
 	return 0;
 }
 
@@ -417,23 +474,6 @@ int exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf, unsigned
 	case ID_UPDATE_MD_BOOT_MODE:
 		if (*((unsigned int *)buf) > MD_BOOT_MODE_INVALID && *((unsigned int *)buf) < MD_BOOT_MODE_MAX)
 			md->md_boot_mode = *((unsigned int *)buf);
-		break;
-	case ID_ENTER_FLIGHT_MODE:
-		CCCI_NOTICE_LOG(md->index, CHAR, "MD enter flight mode called by %ps\n", __builtin_return_address(0));
-		ret = port_proxy_send_msg_to_user(md->port_proxy_obj,
-				CCCI_MONITOR_CH, CCCI_MD_MSG_FLIGHT_STOP_REQUEST, 0);
-		break;
-	case ID_LEAVE_FLIGHT_MODE:
-		CCCI_NOTICE_LOG(md->index, CHAR, "MD leave flight mode called by %ps\n", __builtin_return_address(0));
-		port_proxy_send_msg_to_user(md->port_proxy_obj,
-				CCCI_MONITOR_CH, CCCI_MD_MSG_FLIGHT_START_REQUEST, 0);
-		break;
-	case ID_MD_RF_DESENSE:
-		if (buf == NULL)
-			CCCI_ERROR_LOG(md->index, CHAR, "%ps,ID_MD_RF_DESENSE buf is null\n",
-				__builtin_return_address(0));
-		else
-			ret = ccci_update_rf_desense(md, buf[0]);
 		break;
 	default:
 		ret = -CCCI_ERR_FUNC_ID_ERROR;

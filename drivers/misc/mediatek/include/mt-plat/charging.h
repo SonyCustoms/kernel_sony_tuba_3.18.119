@@ -54,7 +54,6 @@
 #ifndef CONFIG_ARCH_MT8173
 #include <mach/mt_charging.h>
 #endif
-#include <linux/types.h>
 
 /* ============================================================ */
 /* define */
@@ -66,12 +65,15 @@
 #define BAT_LOG_FULL 2
 #define BAT_LOG_DEBG 3
 
+//CEI comment start//
 #define battery_xlog_printk(num, fmt, args...) \
 do {\
 	if (Enable_BATDRV_LOG >= (int)num) \
-		pr_debug(fmt, ##args); \
+		pr_err(fmt, ##args); \
 } while (0)
+//CEI comment end//
 
+//CEI comment start//
 #define battery_log(num, fmt, args...) \
 do { \
 	if (Enable_BATDRV_LOG >= (int)num) \
@@ -81,11 +83,11 @@ do { \
 			break; \
 			/*fall-through*/\
 		default: \
-			pr_debug(fmt, ##args); \
+			pr_err(fmt, ##args); \
 			break; \
 		} \
 } while (0)
-
+//CEI comment end//
 
 /* ============================================================ */
 /* ENUM */
@@ -142,18 +144,8 @@ typedef enum {
 	CHARGING_CMD_RUN_AICL,
 	CHARGING_CMD_SET_IRCMP_RESISTOR,
 	CHARGING_CMD_SET_IRCMP_VOLT_CLAMP,
-	CHARGING_CMD_ENABLE_DC_VBUSOV,
-	CHARGING_CMD_SET_DC_VBUSOV,
-	CHARGING_CMD_ENABLE_DC_VBUSOC,
-	CHARGING_CMD_SET_DC_VBUSOC,
-	CHARGING_CMD_ENABLE_DC_VBATOV,
-	CHARGING_CMD_SET_DC_VBATOV,
-	CHARGING_CMD_GET_IS_DC_ENABLE,
-	CHARGING_CMD_SET_PEP20_EFFICIENCY_TABLE,
-	CHARGING_CMD_ENABLE_CHR_TYPE_DET,
-	CHARGING_CMD_ENABLE_DISCHARGE,
-	CHARGING_CMD_GET_TBUS,
-	CHARGING_CMD_GET_TBAT,
+	CHARGING_CMD_SET_DEFAULT_DPM,
+	CHARGING_CMD_DUMP_REGISTER_GET_DATA,
 	CHARGING_CMD_NUMBER
 } CHARGING_CTRL_CMD;
 
@@ -376,12 +368,18 @@ typedef enum {
 	BATTERY_VOLT_04_280000_V = 4280000,
 	BATTERY_VOLT_04_287500_V = 4287500,
 	BATTERY_VOLT_04_300000_V = 4300000,
+//CEI comment start
+	BATTERY_VOLT_04_304000_V = 4304000,
+//CEI comment end
 	BATTERY_VOLT_04_312500_V = 4312500,
 	BATTERY_VOLT_04_320000_V = 4320000,
 	BATTERY_VOLT_04_325000_V = 4325000,
 	BATTERY_VOLT_04_337500_V = 4337500,
 	BATTERY_VOLT_04_340000_V = 4340000,
 	BATTERY_VOLT_04_350000_V = 4350000,
+//CEI comment start
+	BATTERY_VOLT_04_352000_V = 4352000,
+//CEI comment end
 	BATTERY_VOLT_04_360000_V = 4360000,
 	BATTERY_VOLT_04_362500_V = 4362500,
 	BATTERY_VOLT_04_375000_V = 4375000,
@@ -509,6 +507,9 @@ typedef enum {
 	CHARGE_CURRENT_1750_00_MA = 175000,
 	CHARGE_CURRENT_1800_00_MA = 180000,
 	CHARGE_CURRENT_1825_00_MA = 182500,
+//CEI comment start//
+	CHARGE_CURRENT_1856_00_MA = 185600,
+//CEI comment end//
 	CHARGE_CURRENT_1875_00_MA = 187500,
 	CHARGE_CURRENT_1900_00_MA = 190000,
 	CHARGE_CURRENT_1950_00_MA = 195000,
@@ -547,6 +548,9 @@ typedef enum {
 	CHR_VOLT_00_500000_V = 500,
 	CHR_VOLT_01_000000_V = 1000,
 	CHR_VOLT_04_000000_V = 4000,
+//CEI comment start//
+	CHR_VOLT_04_400000_V = 4400,
+//CEI comment end//	
 	CHR_VOLT_04_500000_V = 4500,
 	CHR_VOLT_05_000000_V = 5000,
 	CHR_VOLT_05_500000_V = 5500,
@@ -610,6 +614,7 @@ typedef enum {
 extern int Enable_BATDRV_LOG;
 extern kal_bool chargin_hw_init_done;
 extern unsigned int g_bcct_flag;
+extern unsigned int g_aicr_upper_bound;
 
 /* ============================================================ */
 /* External function */
@@ -619,7 +624,6 @@ extern unsigned int upmu_get_reg_value(unsigned int reg);
 extern void Charger_Detect_Init(void);
 extern void Charger_Detect_Release(void);
 extern int hw_charging_get_charger_type(void);
-extern void hw_bc11_dcd_release(void) __attribute__((weak));
 extern void mt_power_off(void);
 extern unsigned int mt6311_get_chip_id(void);
 extern int is_mt6311_exist(void);
@@ -627,8 +631,6 @@ extern int is_mt6311_sw_ready(void);
 
 extern void hw_charging_enable_dp_voltage(int ison);
 
-/* For RT5735A SDA low workaround */
-extern void battery_disable_batfet(void);
 
 /* switch charger */
 extern void switch_charger_set_vindpm(unsigned int chr_v);
@@ -658,15 +660,8 @@ extern int mtk_chr_get_ibat(unsigned int *ibat);
 extern int mtk_chr_get_vbus(unsigned int *vbus);
 extern int mtk_chr_get_aicr(unsigned int *aicr);
 extern int mtk_chr_is_charger_exist(unsigned char *exist);
-extern int mtk_chr_enable_power_path(unsigned char en);
+extern int mtk_chr_enable_direct_charge(unsigned char charging_enable);
 extern int mtk_chr_enable_charge(unsigned char charging_enable);
 extern int mtk_chr_reset_aicr_upper_bound(void);
-extern int mtk_chr_enable_chr_type_det(unsigned char en);
-extern int mtk_chr_pd_enable_power_path(unsigned char enable);
-extern int mtk_chr_enable_discharge(bool enable);
-extern int mtk_chr_enable_hv_charging(bool en);
-extern bool mtk_chr_is_hv_charging_enable(void);
-extern int mtk_chr_enable_kpoc_shutdown(bool en);
-extern bool mtk_chr_is_kpoc_shutdown_enable(void);
 
 #endif	/* #ifndef _CHARGING_H */
