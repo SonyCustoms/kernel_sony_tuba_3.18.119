@@ -42,6 +42,11 @@ static void ext4_dir_crypt_complete(struct crypto_async_request *req, int res)
 	complete(&ecr->completion);
 }
 
+bool ext4_valid_filenames_enc_mode(uint32_t mode)
+{
+	return (mode == EXT4_ENCRYPTION_MODE_AES_256_CTS);
+}
+
 static unsigned max_name_len(struct inode *inode)
 {
 	return S_ISLNK(inode->i_mode) ? inode->i_sb->s_blocksize :
@@ -321,10 +326,12 @@ int _ext4_fname_disk_to_usr(struct inode *inode,
 			return oname->len;
 		}
 	}
+
 	if (iname->len < EXT4_CRYPTO_BLOCK_SIZE) {
 		EXT4_ERROR_INODE(inode, "encrypted inode too small");
 		return -EUCLEAN;
 	}
+
 	if (EXT4_I(inode)->i_crypt_info)
 		return ext4_fname_decrypt(inode, iname, oname);
 
@@ -338,7 +345,7 @@ int _ext4_fname_disk_to_usr(struct inode *inode,
 		memcpy(buf+4, &hinfo->minor_hash, 4);
 	} else
 		memset(buf, 0, 8);
-	memcpy(buf + 8, iname->name + ((iname->len - 17) & ~15), 16);
+	memcpy(buf + 8, iname->name + iname->len - 16, 16);
 	oname->name[0] = '_';
 	ret = digest_encode(buf, 24, oname->name+1);
 	oname->len = ret + 1;
