@@ -44,9 +44,6 @@
     doing the mount will be allowed to access the filesystem */
 #define FUSE_ALLOW_OTHER         (1 << 1)
 
-/** [CEI][SM10N][SD] DMS10895023 geotag issue ,fixed by DMS01421006 */
-#define FUSE_ALLOW_UTIME_GRP     (1 << 2)
-
 /** Number of page pointers embedded in fuse_req */
 #define FUSE_REQ_INLINE_PAGES 1
 
@@ -160,11 +157,6 @@ struct fuse_file {
 
 	/** Has flock been performed on this file? */
 	bool flock:1;
-	
-	/* [CEI comment] fuse: Add support for passthrough read/write */ 
-	/* the read write file */
-	struct file *passthrough_filp;
-	bool passthrough_enabled;
 };
 
 /** One input argument of a request */
@@ -222,9 +214,6 @@ struct fuse_out {
 
 	/** Array of arguments */
 	struct fuse_arg args[3];
-
-	/* [CEI comment] fuse: Add support for passthrough read/write */
-	struct file *passthrough_filp;
 };
 
 /** FUSE page descriptor */
@@ -376,10 +365,6 @@ struct fuse_req {
 
 	/** Request is stolen from fuse_file->reserved_req */
 	struct file *stolen_file;
-
-	/* [CEI comment] fuse: Add support for passthrough read/write */
-	/** fuse passthrough file  */
-	struct file *passthrough_filp;
 };
 
 /**
@@ -500,10 +485,6 @@ struct fuse_conn {
 
 	/** write-back cache policy (default is write-through) */
 	unsigned writeback_cache:1;
-
-	/* [CEI comment] fuse: Add support for passthrough read/write */
-	/** passthrough IO. */
-	unsigned passthrough:1;
 
 	/*
 	 * The following bitfields are only for optimization purposes
@@ -916,7 +897,7 @@ bool fuse_write_update_size(struct inode *inode, loff_t pos);
 int fuse_flush_times(struct inode *inode, struct fuse_file *ff);
 int fuse_write_inode(struct inode *inode, struct writeback_control *wbc);
 
-int fuse_do_setattr(struct inode *inode, struct iattr *attr,
+int fuse_do_setattr(struct dentry *dentry, struct iattr *attr,
 		    struct file *file);
 
 #endif /* _FS_FUSE_I_H */

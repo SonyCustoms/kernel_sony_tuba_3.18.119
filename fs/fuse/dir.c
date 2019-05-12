@@ -500,16 +500,10 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 	req->out.args[0].value = &outentry;
 	req->out.args[1].size = sizeof(outopen);
 	req->out.args[1].value = &outopen;
-	//[CEI comment] fuse: Add support for passthrough read/write
-	req->out.passthrough_filp = NULL;
 	fuse_request_send(fc, req);
 	err = req->out.h.error;
 	if (err)
 		goto out_free_ff;
-
-	//[CEI comment] fuse: Add support for passthrough read/write
-	if (req->out.passthrough_filp != NULL)
-		ff->passthrough_filp = req->out.passthrough_filp;
 
 	err = -EIO;
 	if (!S_ISREG(outentry.attr.mode) || invalid_nodeid(outentry.nodeid))
@@ -1429,7 +1423,8 @@ static int parse_dirplusfile(char *buf, size_t nbytes, struct file *file,
 			*/
 			over = !dir_emit(ctx, dirent->name, dirent->namelen,
 				       dirent->ino, dirent->type);
-			ctx->pos = dirent->off;
+			if (!over)
+				ctx->pos = dirent->off;
 		}
 
 		buf += reclen;
@@ -1743,15 +1738,6 @@ int fuse_flush_times(struct inode *inode, struct fuse_file *ff)
 	return err;
 }
 
-//[CEI][SM10N][SD] DMS10895023 geotag issue ,fixed by DMS01421006
-static bool fuse_allow_set_time(struct fuse_conn *fc, struct inode *inode)
-{
-	return (fc->flags & FUSE_ALLOW_UTIME_GRP && inode->i_mode & S_IWGRP &&
-	    //current_uid() != inode->i_uid && in_group_p(inode->i_gid));
-	    !uid_eq(current_uid(),inode->i_uid) && in_group_p(inode->i_gid));
-}
-
-
 /*
  * Set attributes, and at the same time refresh them.
  *
@@ -1760,9 +1746,10 @@ static bool fuse_allow_set_time(struct fuse_conn *fc, struct inode *inode)
  * vmtruncate() doesn't allow for this case, so do the rlimit checking
  * and the actual truncation by hand.
  */
-int fuse_do_setattr(struct inode *inode, struct iattr *attr,
+int fuse_do_setattr(struct dentry *dentry, struct iattr *attr,
 		    struct file *file)
 {
+	struct inode *inode = d_inode(dentry);
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	struct fuse_req *req;
@@ -1771,31 +1758,30 @@ int fuse_do_setattr(struct inode *inode, struct iattr *attr,
 	bool is_truncate = false;
 	bool is_wb = fc->writeback_cache;
 	loff_t oldsize;
-	//[CEI][SM10N][SD] DMS10895023 geotag issue ,fixed by DMS01421006
-	unsigned int ia_valid;
 	int err;
 	bool trust_local_cmtime = is_wb && S_ISREG(inode->i_mode);
 
 	if (!(fc->flags & FUSE_DEFAULT_PERMISSIONS))
 		attr->ia_valid |= ATTR_FORCE;
-	
-	//[CEI][SM10N][SD] DMS10895023 geotag issue ,fixed by DMS01421006
-	ia_valid = attr->ia_valid;
-	if (ia_valid & (ATTR_MTIME_SET | ATTR_ATIME_SET | ATTR_TIMES_SET) &&
-	    fuse_allow_set_time(fc, inode)) {
-		attr->ia_valid &= ~(ATTR_MTIME_SET | ATTR_ATIME_SET |
-				    ATTR_TIMES_SET);
-	}
 
 	err = inode_change_ok(inode, attr);
-	//[CEI][SM10N][SD] DMS10895023 geotag issue ,fixed by DMS01421006
-	attr->ia_valid = ia_valid;
 	if (err)
 		return err;
 
 	if (attr->ia_valid & ATTR_OPEN) {
-		if (fc->atomic_o_trunc)
+		/* This is coming from open(..., ... | O_TRUNC); */
+		WARN_ON(!(attr->ia_valid & ATTR_SIZE));
+		WARN_ON(attr->ia_size != 0);
+		if (fc->atomic_o_trunc) {
+			/*
+			 * No need to send request to userspace, since actual
+			 * truncation has already been done by OPEN.  But still
+			 * need to truncate page cache.
+			 */
+			i_size_write(inode, 0);
+			truncate_pagecache(inode, 0);
 			return 0;
+		}
 		file = NULL;
 	}
 
@@ -1894,9 +1880,9 @@ static int fuse_setattr(struct dentry *entry, struct iattr *attr)
 		return -EACCES;
 
 	if (attr->ia_valid & ATTR_FILE)
-		return fuse_do_setattr(inode, attr, attr->ia_file);
+		return fuse_do_setattr(entry, attr, attr->ia_file);
 	else
-		return fuse_do_setattr(inode, attr, NULL);
+		return fuse_do_setattr(entry, attr, NULL);
 }
 
 static int fuse_getattr(struct vfsmount *mnt, struct dentry *entry,
