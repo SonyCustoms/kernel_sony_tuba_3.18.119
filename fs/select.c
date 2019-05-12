@@ -29,7 +29,7 @@
 #include <linux/sched/rt.h>
 #include <linux/freezer.h>
 #include <net/busy_poll.h>
-#include <linux/thread_info.h>
+
 #include <asm/uaccess.h>
 
 
