@@ -11,9 +11,6 @@
 /*
  * This handles all read/write requests to block devices
  */
-#if defined(CONFIG_MT_ENG_BUILD)
-#define DEBUG 1
-#endif
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/backing-dev.h>
@@ -43,6 +40,8 @@
 #include "blk-cgroup.h"
 #include "blk-mq.h"
 
+#include <linux/math64.h>
+
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_complete);
@@ -50,9 +49,6 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(block_split);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_unplug);
 
 DEFINE_IDA(blk_queue_ida);
-
-int trap_non_toi_io;
-EXPORT_SYMBOL_GPL(trap_non_toi_io);
 
 /*
  * For the allocated request tables
@@ -200,7 +196,7 @@ EXPORT_SYMBOL(blk_delay_queue);
  **/
 void blk_start_queue(struct request_queue *q)
 {
-	WARN_ON(!irqs_disabled());
+	WARN_ON(!in_interrupt() && !irqs_disabled());
 
 	queue_flag_clear(QUEUE_FLAG_STOPPED, q);
 	__blk_run_queue(q);
@@ -2018,9 +2014,6 @@ void submit_bio(int rw, struct bio *bio)
 {
 	bio->bi_rw |= rw;
 
-	if (unlikely(trap_non_toi_io))
-		BUG_ON(!(bio->bi_flags & BIO_TOI));
-
 	/*
 	 * If it's a regular read/write or a barrier with data attached,
 	 * go through the normal accounting stuff before submission.
@@ -3421,3 +3414,51 @@ int __init blk_dev_init(void)
 	return 0;
 }
 
+/*
+ * Blk IO latency support. We want this to be as cheap as possible, so doing
+ * this lockless (and avoiding atomics), a few off by a few errors in this
+ * code is not harmful, and we don't want to do anything that is
+ * perf-impactful.
+ * TODO : If necessary, we can make the histograms per-cpu and aggregate
+ * them when printing them out.
+ */
+ssize_t
+blk_latency_hist_show(char* name, struct io_latency_state *s, char *buf,
+		int buf_size)
+{
+	int i;
+	int bytes_written = 0;
+	u_int64_t num_elem, elem;
+	int pct;
+	u_int64_t average;
+
+       num_elem = s->latency_elems;
+       if (num_elem > 0) {
+	       average = div64_u64(s->latency_sum, s->latency_elems);
+	       bytes_written += scnprintf(buf + bytes_written,
+			       buf_size - bytes_written,
+			       "IO svc_time %s Latency Histogram (n = %llu,"
+			       " average = %llu):\n", name, num_elem, average);
+	       for (i = 0;
+		    i < ARRAY_SIZE(latency_x_axis_us);
+		    i++) {
+		       elem = s->latency_y_axis[i];
+		       pct = div64_u64(elem * 100, num_elem);
+		       bytes_written += scnprintf(buf + bytes_written,
+				       PAGE_SIZE - bytes_written,
+				       "\t< %6lluus%15llu%15d%%\n",
+				       latency_x_axis_us[i],
+				       elem, pct);
+	       }
+	       /* Last element in y-axis table is overflow */
+	       elem = s->latency_y_axis[i];
+	       pct = div64_u64(elem * 100, num_elem);
+	       bytes_written += scnprintf(buf + bytes_written,
+			       PAGE_SIZE - bytes_written,
+			       "\t>=%6lluus%15llu%15d%%\n",
+			       latency_x_axis_us[i - 1], elem, pct);
+	}
+
+	return bytes_written;
+}
+EXPORT_SYMBOL(blk_latency_hist_show);
