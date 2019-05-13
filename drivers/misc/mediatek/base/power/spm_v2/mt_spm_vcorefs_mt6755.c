@@ -313,22 +313,12 @@ static void __go_to_vcore_dvfs(u32 spm_flags, u32 spm_data)
 {
 	struct pcm_desc *pcmdesc = __spm_sodi.pcmdesc;
 	struct pwr_ctrl *pwrctrl = __spm_vcore_dvfs.pwrctrl;
-	u32 sodi_idx;
 
-#if defined(CONFIG_MTK_PMIC_CHIP_MT6353) && defined(CONFIG_ARCH_MT6755)
-	if (use_new_spmfw)
-		sodi_idx = DYNA_LOAD_PCM_SODI_R;
-	else
-		sodi_idx = DYNA_LOAD_PCM_SODI;
-#else
-	sodi_idx = DYNA_LOAD_PCM_SODI;
-#endif
-
-	if (!dyna_load_pcm[sodi_idx].ready) {
+	if (!dyna_load_pcm[DYNA_LOAD_PCM_SODI].ready) {
 		spm_vcorefs_err("LOAD FIRMWARE FAIL\n");
 		BUG();
 	}
-	pcmdesc = &(dyna_load_pcm[sodi_idx].desc);
+	pcmdesc = &(dyna_load_pcm[DYNA_LOAD_PCM_SODI].desc);
 
 	set_pwrctrl_pcm_flags(pwrctrl, spm_flags);
 

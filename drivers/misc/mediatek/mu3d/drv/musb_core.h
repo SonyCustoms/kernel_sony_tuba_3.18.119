@@ -59,7 +59,7 @@ struct musb_ep;
 #ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 #include <mt-plat/mt_boot_common.h>
 #endif
-extern int fake_CDP;
+extern u32 fake_CDP;
 extern unsigned int musb_speed;
 
 extern struct musb *_mu3d_musb;
@@ -771,13 +771,6 @@ static inline int musb_platform_exit(struct musb *musb)
 	return musb->ops->exit(musb);
 }
 
-#ifdef CONFIG_DUAL_ROLE_USB_INTF
-extern void mt_usb_dual_role_to_none(void);
-extern void mt_usb_dual_role_to_device(void);
-extern void mt_usb_dual_role_to_host(void);
-extern int mt_usb_dual_role_init(struct musb *musb);
-#endif
-
 extern bool usb_cable_connected(void);
 extern void usb_phy_savecurrent(unsigned int clk_on);
 extern void usb_phy_recover(unsigned int clk_on);
@@ -843,7 +836,4 @@ static inline int mtk_is_host_mode(void)
 extern int typec_switch_usb_disconnect(void *data);
 extern int typec_switch_usb_connect(void *data);
 #endif
-extern int mu3d_force_on;
-extern void mt_usb_connect(void);
-extern void mt_usb_connect_test(int start);
 #endif	/* __MUSB_CORE_H__ */

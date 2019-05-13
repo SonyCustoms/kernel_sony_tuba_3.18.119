@@ -374,53 +374,74 @@ void __init early_print(const char *str, ...)
 
 static void __init cpuid_init_hwcaps(void)
 {
-	int block;
-	u32 isar5;
+	unsigned int divide_instrs, vmsa, features;
+#ifdef CONFIG_MTK_ADVERTISE_CE_SUPPORT
+	unsigned int block;
+#endif
 
 	if (cpu_architecture() < CPU_ARCH_ARMv7)
 		return;
 
-	block = cpuid_feature_extract(CPUID_EXT_ISAR0, 24);
-	if (block >= 2)
+	divide_instrs = (read_cpuid_ext(CPUID_EXT_ISAR0) & 0x0f000000) >> 24;
+
+	switch (divide_instrs) {
+	case 2:
 		elf_hwcap |= HWCAP_IDIVA;
-	if (block >= 1)
+	case 1:
 		elf_hwcap |= HWCAP_IDIVT;
+	}
 
 	/* LPAE implies atomic ldrd/strd instructions */
-	block = cpuid_feature_extract(CPUID_EXT_MMFR0, 0);
-	if (block >= 5)
+	vmsa = (read_cpuid_ext(CPUID_EXT_MMFR0) & 0xf) >> 0;
+	if (vmsa >= 5)
 		elf_hwcap |= HWCAP_LPAE;
-	/* check for supported v8 Crypto instructions */
-	isar5 = read_cpuid_ext(CPUID_EXT_ISAR5);
-#ifdef CONFIG_MTK_ADVERTISE_CE_SUPPORT 
-	block = cpuid_feature_extract_field(isar5, 4);
-	if (block >= 2)
-		elf_hwcap2 |= HWCAP2_PMULL;
-	if (block >= 1)
-		elf_hwcap2 |= HWCAP2_AES;
 
-	block = cpuid_feature_extract_field(isar5, 8);
-	if (block >= 1)
+#ifdef CONFIG_MTK_ADVERTISE_CE_SUPPORT
+	/*
+	 * ID_ISAR5 contains 4-bit wide signed feature blocks.
+	 * The blocks we test below represent incremental functionality
+	 * for non-negative values. Negative values are reserved.
+	 */
+	features = read_cpuid_ext(CPUID_EXT_ISAR5);
+	block = (features >> 4) & 0xf;
+	if (!(block & 0x8)) {
+		switch (block) {
+		default:
+		case 2:
+			elf_hwcap2 |= HWCAP2_PMULL;
+		case 1:
+			elf_hwcap2 |= HWCAP2_AES;
+		case 0:
+			break;
+		}
+	}
+
+	block = (features >> 8) & 0xf;
+	if (block && !(block & 0x8))
 		elf_hwcap2 |= HWCAP2_SHA1;
 
-	block = cpuid_feature_extract_field(isar5, 12);
-	if (block >= 1)
+	block = (features >> 12) & 0xf;
+	if (block && !(block & 0x8))
 		elf_hwcap2 |= HWCAP2_SHA2;
 
-	block = cpuid_feature_extract_field(isar5, 16);
-	if (block >= 1)
+	block = (features >> 16) & 0xf;
+	if (block && !(block & 0x8))
 		elf_hwcap2 |= HWCAP2_CRC32;
-#else 
-	block = cpuid_feature_extract_field(isar5, 12); 
-	if (block >= 1) 
-		elf_hwcap2 |= HWCAP2_SHA2; 
-#endif 
+#else
+	/* check for supported v8 Crypto instructions */
+	features = read_cpuid_ext(CPUID_EXT_ISAR5);
+
+	vmsa = cpuid_feature_extract_field(features, 12);
+	if (vmsa >= 1)
+		elf_hwcap2 |= HWCAP2_SHA2;
+#endif
 
 }
 
 static void __init elf_hwcap_fixup(void)
 {
 	unsigned id = read_cpuid_id();
+	unsigned sync_prim;
 
 	/*
 	 * HWCAP_TLS is available only on 1136 r1p0 and later,
@@ -441,9 +462,9 @@ static void __init elf_hwcap_fixup(void)
 	 * avoid advertising SWP; it may not be atomic with
 	 * multiprocessing cores.
 	 */
-	if (cpuid_feature_extract(CPUID_EXT_ISAR3, 12) > 1 ||
-	    (cpuid_feature_extract(CPUID_EXT_ISAR3, 12) == 1 &&
-	     cpuid_feature_extract(CPUID_EXT_ISAR4, 20) >= 3))
+	sync_prim = ((read_cpuid_ext(CPUID_EXT_ISAR3) >> 8) & 0xf0) |
+		    ((read_cpuid_ext(CPUID_EXT_ISAR4) >> 20) & 0x0f);
+	if (sync_prim >= 0x13)
 		elf_hwcap &= ~HWCAP_SWP;
 }
 
@@ -771,7 +792,7 @@ static void __init request_standard_resources(const struct machine_desc *mdesc)
 	struct resource *res;
 
 	kernel_code.start   = virt_to_phys(_text);
-	kernel_code.end     = virt_to_phys(__init_begin - 1);
+	kernel_code.end     = virt_to_phys(_etext - 1);
 	kernel_data.start   = virt_to_phys(_sdata);
 	kernel_data.end     = virt_to_phys(_end - 1);
 

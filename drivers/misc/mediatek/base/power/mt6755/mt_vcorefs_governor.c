@@ -111,10 +111,6 @@ unsigned int vcorefs_log_mask = ~((0xFFFFFFFF << LAST_KICKER) | (1U << KIR_GPU))
 #define MT6750_TURBO_5M_SEGMENT 0x45
 #define MT6750_NORMAL_5M_SEGMENT 0x46
 #define MT6738_5M_SEGMENT 0x4B
-#define MT6750S_6M_SEGMENT 0xC1
-#define MT6750S_5M_SEGMENT 0xC5
-#define MT6750N_6M_SEGMENT 0xC2
-#define MT6750N_5M_SEGMENT 0xC6
 
 /*
  * struct define
@@ -615,7 +611,6 @@ int vcorefs_get_curr_vcore(void)
 
 	return vcore < VCORE_INVALID ? vcore_pmic_to_uv(vcore) : 0;
 }
-EXPORT_SYMBOL(vcorefs_get_curr_vcore);
 
 int vcorefs_get_curr_ddr(void)
 {
@@ -822,6 +817,7 @@ int vcorefs_handle_kir_sysfsx_req(int opp, int vcore, int ddr)
 {
 	int r = -1;
 
+	vcorefs_info("hh: vcorefs_handle_kir_sysfsx_req(%d, v:%d, f:%d)\n", opp, vcore, ddr);
 	if (opp == OPPI_PERF)
 		r = spm_vcorefs_set_dvfs_hpm_force(OPPI_PERF, vcore, ddr);
 	else if (opp == OPPI_LOW_PWR)
@@ -1122,9 +1118,7 @@ int vcorefs_late_init_dvfs(void)
 	if (gvrctrl->segment_code == MT6750_NORMAL_SEGMENT ||
 		gvrctrl->segment_code == MT6750_NORMAL_5M_SEGMENT ||
 		gvrctrl->segment_code == MT6738_5M_SEGMENT ||
-		gvrctrl->segment_code == MT6738_SEGMENT ||
-		gvrctrl->segment_code == MT6750N_6M_SEGMENT ||
-		gvrctrl->segment_code == MT6750N_5M_SEGMENT) {
+		gvrctrl->segment_code == MT6738_SEGMENT) {
 		if (gvrctrl->is_fhd_segment == true) {
 			if (spm_read(SPM_POWER_ON_VAL0) & (1 << 14)) {
 				gvrctrl->segment_policy = VCOREFS_SEGMENT_LPM;
@@ -1448,7 +1442,6 @@ int vcorefs_enable_debug_isr(bool enable)
 	mutex_unlock(&governor_mutex);
 	return 0;
 }
-EXPORT_SYMBOL(vcorefs_enable_debug_isr);
 
 int vcorefs_enable_perform_bw(bool enable)
 {

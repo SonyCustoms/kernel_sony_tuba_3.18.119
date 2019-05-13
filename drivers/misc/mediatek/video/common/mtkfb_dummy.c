@@ -130,12 +130,10 @@ static int mtkfb_setcolreg(u_int regno, u_int red, u_int green,
 
 	/* NOT_REFERENCED(transp); */
 	bpp = info->var.bits_per_pixel;
-	if (bpp < 32) {
-		m = 1 << bpp;
-		if (regno >= m) {
-			r = -EINVAL;
-			goto exit;
-		}
+	m = 1 << bpp;
+	if (regno >= m) {
+		r = -EINVAL;
+		goto exit;
 	}
 
 	switch (bpp) {

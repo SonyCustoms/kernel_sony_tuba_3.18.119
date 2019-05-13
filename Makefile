@@ -1,8 +1,8 @@
 VERSION = 3
 PATCHLEVEL = 18
-SUBLEVEL = 119
+SUBLEVEL = 35
 EXTRAVERSION =
-NAME = Diseased Newt
+NAME = Shuffling Zombie Juror
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
@@ -141,7 +141,7 @@ PHONY += $(MAKECMDGOALS) sub-make
 $(filter-out _all sub-make $(CURDIR)/Makefile, $(MAKECMDGOALS)) _all: sub-make
 	@:
 
-sub-make:
+sub-make: FORCE
 	$(Q)$(MAKE) -C $(KBUILD_OUTPUT) KBUILD_SRC=$(CURDIR) \
 	-f $(CURDIR)/Makefile $(filter-out _all sub-make,$(MAKECMDGOALS))
 
@@ -213,6 +213,7 @@ obj		:= $(objtree)
 VPATH		:= $(srctree)$(if $(KBUILD_EXTMOD),:$(KBUILD_EXTMOD))
 
 export srctree objtree VPATH
+
 
 # SUBARCH tells the usermode build what the underlying arch is.  That is set
 # first, and if a usermode build is happening, the "ARCH=um" on the command
@@ -376,7 +377,6 @@ LDFLAGS_MODULE  =
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage -fno-tree-loop-im
-CFLAGS_KCOV	= -fsanitize-coverage=trace-pc
 
 
 # Use USERINCLUDE when you must reference the UAPI directories only.
@@ -422,7 +422,7 @@ export MAKE AWK GENKSYMS INSTALLKERNEL PERL PYTHON UTS_MACHINE
 export HOSTCXX HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS
 
 export KBUILD_CPPFLAGS NOSTDINC_FLAGS LINUXINCLUDE OBJCOPYFLAGS LDFLAGS
-export KBUILD_CFLAGS CFLAGS_KERNEL CFLAGS_MODULE CFLAGS_GCOV CFLAGS_KCOV
+export KBUILD_CFLAGS CFLAGS_KERNEL CFLAGS_MODULE CFLAGS_GCOV
 export KBUILD_AFLAGS AFLAGS_KERNEL AFLAGS_MODULE
 export KBUILD_AFLAGS_MODULE KBUILD_CFLAGS_MODULE KBUILD_LDFLAGS_MODULE
 export KBUILD_AFLAGS_KERNEL KBUILD_CFLAGS_KERNEL
@@ -610,13 +610,6 @@ all: vmlinux
 include $(srctree)/arch/$(SRCARCH)/Makefile
 
 KBUILD_CFLAGS	+= $(call cc-option,-fno-delete-null-pointer-checks,)
-KBUILD_CFLAGS	+= $(call cc-disable-warning,frame-address,)
-KBUILD_CFLAGS	+= $(call cc-disable-warning, format-truncation)
-KBUILD_CFLAGS	+= $(call cc-disable-warning, format-overflow)
-KBUILD_CFLAGS	+= $(call cc-disable-warning, int-in-bool-context)
-KBUILD_CFLAGS	+= $(call cc-disable-warning, attribute-alias)
-KBUILD_CFLAGS	+= $(call cc-option,-fno-PIE)
-KBUILD_AFLAGS	+= $(call cc-option,-fno-PIE)
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os $(call cc-disable-warning,maybe-uninitialized,)
@@ -678,14 +671,6 @@ else
 endif
 endif
 KBUILD_CFLAGS += $(stackp-flag)
-
-ifdef CONFIG_KCOV
-  ifeq ($(call cc-option, $(CFLAGS_KCOV)),)
-    $(warning Cannot use CONFIG_KCOV: \
-             -fsanitize-coverage=trace-pc is not supported by compiler)
-    CFLAGS_KCOV =
-  endif
-endif
 
 ifeq ($(COMPILER),clang)
 KBUILD_CPPFLAGS += $(call cc-option,-Qunused-arguments,)
@@ -754,6 +739,51 @@ ifdef CONFIG_DYNAMIC_FTRACE
 endif
 endif
 
+#[VY36] ==> CCI KLog, added by Jimmy@CCI
+ifdef CONFIG_CCI_KLOG
+	KBUILD_CFLAGS	+= -DCCI_KLOG=y
+	ifdef CONFIG_CCI_KLOG_START_ADDR_PHYSICAL
+		KBUILD_CFLAGS	+= -DCCI_KLOG_START_ADDR_PHYSICAL=$(CONFIG_CCI_KLOG_START_ADDR_PHYSICAL)
+	endif # ifdef CONFIG_CCI_KLOG_START_ADDR_PHYSICAL
+	ifdef CONFIG_CCI_KLOG_SIZE
+		KBUILD_CFLAGS	+= -DCCI_KLOG_SIZE=$(CONFIG_CCI_KLOG_SIZE)
+	endif # ifdef CONFIG_CCI_KLOG_SIZE
+	ifdef CONFIG_CCI_KLOG_HEADER_SIZE
+		KBUILD_CFLAGS	+= -DCCI_KLOG_HEADER_SIZE=$(CONFIG_CCI_KLOG_HEADER_SIZE)
+	endif # ifdef CONFIG_CCI_KLOG_HEADER_SIZE
+	ifdef CONFIG_CCI_KLOG_CRASH_SIZE
+		KBUILD_CFLAGS	+= -DCCI_KLOG_CRASH_SIZE=$(CONFIG_CCI_KLOG_CRASH_SIZE)
+	endif # ifdef CONFIG_CCI_KLOG_CRASH_SIZE
+	ifdef CONFIG_CCI_KLOG_APPSBL_SIZE
+		KBUILD_CFLAGS	+= -DCCI_KLOG_APPSBL_SIZE=$(CONFIG_CCI_KLOG_APPSBL_SIZE)
+	endif # ifdef CONFIG_CCI_KLOG_APPSBL_SIZE
+	ifdef CONFIG_CCI_KLOG_KERNEL_SIZE
+		KBUILD_CFLAGS	+= -DCCI_KLOG_KERNEL_SIZE=$(CONFIG_CCI_KLOG_KERNEL_SIZE)
+	endif # ifdef CONFIG_CCI_KLOG_KERNEL_SIZE
+	ifdef CONFIG_CCI_KLOG_ANDROID_MAIN_SIZE
+		KBUILD_CFLAGS	+= -DCCI_KLOG_ANDROID_MAIN_SIZE=$(CONFIG_CCI_KLOG_ANDROID_MAIN_SIZE)
+	endif # ifdef CONFIG_CCI_KLOG_ANDROID_MAIN_SIZE
+	ifdef CONFIG_CCI_KLOG_ANDROID_SYSTEM_SIZE
+		KBUILD_CFLAGS	+= -DCCI_KLOG_ANDROID_SYSTEM_SIZE=$(CONFIG_CCI_KLOG_ANDROID_SYSTEM_SIZE)
+	endif # ifdef CONFIG_CCI_KLOG_ANDROID_SYSTEM_SIZE
+	ifdef CONFIG_CCI_KLOG_ANDROID_RADIO_SIZE
+		KBUILD_CFLAGS	+= -DCCI_KLOG_ANDROID_RADIO_SIZE=$(CONFIG_CCI_KLOG_ANDROID_RADIO_SIZE)
+	endif # ifdef CONFIG_CCI_KLOG_ANDROID_RADIO_SIZE
+	ifdef CONFIG_CCI_KLOG_ANDROID_EVENTS_SIZE
+		KBUILD_CFLAGS	+= -DCCI_KLOG_ANDROID_EVENTS_SIZE=$(CONFIG_CCI_KLOG_ANDROID_EVENTS_SIZE)
+	endif # ifdef CONFIG_CCI_KLOG_ANDROID_EVENTS_SIZE
+	ifdef CONFIG_CCI_KLOG_SUPPORT_CCI_ENGMODE
+		KBUILD_CFLAGS	+= -DCCI_KLOG_SUPPORT_CCI_ENGMODE=y
+	endif # ifdef CONFIG_CCI_KLOG_SUPPORT_CCI_ENGMODE
+	ifdef CONFIG_CCI_KLOG_ALLOW_FORCE_PANIC
+		KBUILD_CFLAGS	+= -DCCI_KLOG_ALLOW_FORCE_PANIC=y
+	endif # ifdef CONFIG_CCI_KLOG_ALLOW_FORCE_PANIC
+	ifdef CONFIG_CCI_KLOG_SUPPORT_RESTORATION
+		KBUILD_CFLAGS	+= -DCCI_KLOG_SUPPORT_RESTORATION=y
+	endif # ifdef CONFIG_CCI_KLOG_SUPPORT_RESTORATION
+endif # ifdef CONFIG_CCI_KLOG
+#[VY36] <== CCI KLog, added by Jimmy@CCI
+
 # We trigger additional mismatches with less inlining
 ifdef CONFIG_DEBUG_SECTION_MISMATCH
 KBUILD_CFLAGS += $(call cc-option, -fno-inline-functions-called-once)
@@ -771,9 +801,6 @@ KBUILD_CFLAGS += $(call cc-disable-warning, pointer-sign)
 
 # disable invalid "can't wrap" optimizations for signed / pointers
 KBUILD_CFLAGS	+= $(call cc-option,-fno-strict-overflow)
-
-# Make sure -fstack-check isn't enabled (like gentoo apparently did)
-KBUILD_CFLAGS  += $(call cc-option,-fno-stack-check,)
 
 # conserve stack if available
 KBUILD_CFLAGS   += $(call cc-option,-fconserve-stack)
@@ -991,12 +1018,13 @@ endif
 prepare2: prepare3 outputmakefile asm-generic
 
 prepare1: prepare2 $(version_h) include/generated/utsrelease.h \
+                   include/generated/cciklog_common.h \
                    include/config/auto.conf
 	$(cmd_crmodverdir)
 
 archprepare: archheaders archscripts prepare1 scripts_basic
 
-prepare0: archprepare
+prepare0: archprepare FORCE
 	$(Q)$(MAKE) $(build)=.
 
 # All the preparing..
@@ -1023,6 +1051,17 @@ define filechk_version.h
 	echo '#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))';)
 endef
 
+#[VY36] ==> CCI KLog, added by Jimmy@CCI
+define filechk_cciklog_common.h
+	(cat $(srctree)/../vendor/cci/tools/klogcat/cciklog_common.h)
+endef
+
+include/generated/cciklog_common.h: $(srctree)/Makefile FORCE
+ifdef CONFIG_CCI_KLOG
+	$(call filechk,cciklog_common.h)
+endif # ifdef CONFIG_CCI_KLOG
+#[VY36] <== CCI KLog, added by Jimmy@CCI
+
 $(version_h): $(srctree)/Makefile FORCE
 	$(call filechk,version.h)
 
@@ -1046,7 +1085,7 @@ INSTALL_FW_PATH=$(INSTALL_MOD_PATH)/lib/firmware
 export INSTALL_FW_PATH
 
 PHONY += firmware_install
-firmware_install:
+firmware_install: FORCE
 	@mkdir -p $(objtree)/firmware
 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.fwinst obj=firmware __fw_install
 
@@ -1068,7 +1107,7 @@ PHONY += archscripts
 archscripts:
 
 PHONY += __headers
-__headers: $(version_h) scripts_basic asm-generic archheaders archscripts
+__headers: $(version_h) scripts_basic asm-generic archheaders archscripts FORCE
 	$(Q)$(MAKE) $(build)=scripts build_unifdef
 
 PHONY += headers_install_all
@@ -1515,11 +1554,11 @@ image_name:
 # Clear a bunch of variables before executing the submake
 tools/: FORCE
 	$(Q)mkdir -p $(objtree)/tools
-	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(filter --j% -j,$(MAKEFLAGS))" O=$(O) subdir=tools -C $(src)/tools/
+	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(filter --j% -j,$(MAKEFLAGS))" O=$(objtree) subdir=tools -C $(src)/tools/
 
 tools/%: FORCE
 	$(Q)mkdir -p $(objtree)/tools
-	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(filter --j% -j,$(MAKEFLAGS))" O=$(O) subdir=tools -C $(src)/tools/ $*
+	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(filter --j% -j,$(MAKEFLAGS))" O=$(objtree) subdir=tools -C $(src)/tools/ $*
 
 # Single targets
 # ---------------------------------------------------------------------------

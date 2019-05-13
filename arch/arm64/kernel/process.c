@@ -44,7 +44,6 @@
 #include <linux/personality.h>
 #include <linux/notifier.h>
 
-#include <asm/alternative.h>
 #include <asm/compat.h>
 #include <asm/cacheflush.h>
 #include <asm/fpsimd.h>
@@ -52,15 +51,19 @@
 #include <asm/processor.h>
 #include <asm/stacktrace.h>
 
-#ifdef CONFIG_THREAD_INFO_IN_TASK
-#include <linux/percpu.h>
-#endif
-
 #ifdef CONFIG_CC_STACKPROTECTOR
 #include <linux/stackprotector.h>
 unsigned long __stack_chk_guard __read_mostly;
 EXPORT_SYMBOL(__stack_chk_guard);
 #endif
+
+void soft_restart(unsigned long addr)
+{
+	setup_mm_for_reboot();
+	cpu_soft_restart(virt_to_phys(cpu_reset), addr);
+	/* Should never get here */
+	BUG();
+}
 
 /*
  * Function pointers to optional machine specific functions
@@ -144,7 +147,9 @@ void machine_power_off(void)
 
 /*
  * Restart requires that the secondary CPUs stop performing any activity
- * while the primary CPU resets the system. Systems with multiple CPUs must
+ * while the primary CPU resets the system. Systems with a single CPU can
+ * use soft_restart() as their machine descriptor's .restart hook, since that
+ * will cause the only available CPU to reset. Systems with multiple CPUs must
  * provide a HW restart implementation, to ensure that all CPUs reset at once.
  * This is required so that any code running after reset on the primary CPU
  * doesn't have to co-ordinate with other CPUs to ensure they aren't still
@@ -250,16 +255,48 @@ void __show_regs(struct pt_regs *regs)
 		top_reg = 29;
 	}
 
+
+#if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+	show_regs_print_info(KERN_ALERT);
+#else // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
 	show_regs_print_info(KERN_DEFAULT);
+#endif // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+
+
+#if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+	print_symbol(KERN_ALERT "PC is at %s\n", instruction_pointer(regs));
+	print_symbol(KERN_ALERT "LR is at %s\n", lr);
+	printk(KERN_ALERT "pc : [<%016llx>] lr : [<%016llx>] pstate: %08llx\n",
+#else // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
 	print_symbol("PC is at %s\n", instruction_pointer(regs));
 	print_symbol("LR is at %s\n", lr);
 	printk("pc : [<%016llx>] lr : [<%016llx>] pstate: %08llx\n",
+#endif // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+
 	       regs->pc, lr, regs->pstate);
+
+#if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+	printk(KERN_ALERT "sp : %016llx\n", sp);
+#else // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
 	printk("sp : %016llx\n", sp);
+#endif // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+
 	for (i = top_reg; i >= 0; i--) {
+
+#if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+		printk(KERN_ALERT "x%-2d: %016llx ", i, regs->regs[i]);
+#else // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
 		printk("x%-2d: %016llx ", i, regs->regs[i]);
+#endif // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+
 		if (i % 2 == 0)
+
+#if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+			printk(KERN_ALERT "\n");
+#else // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
 			printk("\n");
+#endif // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+
 	}
 	if (!user_mode(regs))
 		show_extra_register_data(regs, 128);
@@ -309,8 +346,7 @@ void release_thread(struct task_struct *dead_task)
 
 int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 {
-	if (current->mm)
-		fpsimd_preserve_current_state();
+	fpsimd_preserve_current_state();
 	*dst = *src;
 	return 0;
 }
@@ -324,15 +360,6 @@ int copy_thread(unsigned long clone_flags, unsigned long stack_start,
 	unsigned long tls = p->thread.tp_value;
 
 	memset(&p->thread.cpu_context, 0, sizeof(struct cpu_context));
-
-	/*
-	 * In case p was allocated the same task_struct pointer as some
-	 * other recently-exited task, make sure p is disassociated from
-	 * any cpu that may have run that now-exited task recently.
-	 * Otherwise we could erroneously skip reloading the FPSIMD
-	 * registers for p.
-	 */
-	fpsimd_flush_task_state(p);
 
 	if (likely(!(p->flags & PF_KTHREAD))) {
 		*childregs = *current_pt_regs();
@@ -362,9 +389,6 @@ int copy_thread(unsigned long clone_flags, unsigned long stack_start,
 	} else {
 		memset(childregs, 0, sizeof(struct pt_regs));
 		childregs->pstate = PSR_MODE_EL1h;
-		if (IS_ENABLED(CONFIG_ARM64_UAO) &&
-		    cpus_have_cap(ARM64_HAS_UAO))
-			childregs->pstate |= PSR_UAO_BIT;
 		p->thread.cpu_context.x19 = stack_start;
 		p->thread.cpu_context.x20 = stk_sz;
 	}
@@ -379,46 +403,26 @@ int copy_thread(unsigned long clone_flags, unsigned long stack_start,
 
 static void tls_thread_switch(struct task_struct *next)
 {
+	unsigned long tpidr, tpidrro;
+
 	if (!is_compat_task()) {
-		unsigned long tpidr;
 		asm("mrs %0, tpidr_el0" : "=r" (tpidr));
 		current->thread.tp_value = tpidr;
 	}
 
-	if (is_compat_thread(task_thread_info(next)))
-		write_sysreg(next->thread.tp_value, tpidrro_el0);
-	else if (!arm64_kernel_unmapped_at_el0())
-		write_sysreg(0, tpidrro_el0);
-
-	write_sysreg(next->thread.tp_value, tpidr_el0);
-}
-
-/* Restore the UAO state depending on next's addr_limit */
-static void uao_thread_switch(struct task_struct *next)
-{
-	if (IS_ENABLED(CONFIG_ARM64_UAO)) {
-		if (task_thread_info(next)->addr_limit == KERNEL_DS)
-			asm(ALTERNATIVE("nop", SET_PSTATE_UAO(1), ARM64_HAS_UAO));
-		else
-			asm(ALTERNATIVE("nop", SET_PSTATE_UAO(0), ARM64_HAS_UAO));
+	if (is_compat_thread(task_thread_info(next))) {
+		tpidr = 0;
+		tpidrro = next->thread.tp_value;
+	} else {
+		tpidr = next->thread.tp_value;
+		tpidrro = 0;
 	}
-}
 
-#ifdef CONFIG_THREAD_INFO_IN_TASK
-/*
- * We store our current task in sp_el0, which is clobbered by userspace. Keep a
- * shadow copy so that we can restore this upon entry from userspace.
- *
- * This is *only* for exception entry from EL0, and is not valid until we
- * __switch_to() a user task.
- */
-DEFINE_PER_CPU(struct task_struct *, __entry_task);
-
-static void entry_task_switch(struct task_struct *next)
-{
-	__this_cpu_write(__entry_task, next);
+	asm(
+	"	msr	tpidr_el0, %0\n"
+	"	msr	tpidrro_el0, %1"
+	: : "r" (tpidr), "r" (tpidrro));
 }
-#endif
 
 /*
  * Thread switching.
@@ -432,10 +436,6 @@ struct task_struct *__switch_to(struct task_struct *prev,
 	tls_thread_switch(next);
 	hw_breakpoint_thread_switch(next);
 	contextidr_thread_switch(next);
-#ifdef CONFIG_THREAD_INFO_IN_TASK
-	entry_task_switch(next);
-#endif
-	uao_thread_switch(next);
 
 	/*
 	 * Complete any pending TLB or cache maintenance on this CPU in case
@@ -452,33 +452,24 @@ struct task_struct *__switch_to(struct task_struct *prev,
 unsigned long get_wchan(struct task_struct *p)
 {
 	struct stackframe frame;
-	unsigned long stack_page, ret = 0;
+	unsigned long stack_page;
 	int count = 0;
 	if (!p || p == current || p->state == TASK_RUNNING)
-		return 0;
-
-	stack_page = (unsigned long)try_get_task_stack(p);
-	if (!stack_page)
 		return 0;
 
 	frame.fp = thread_saved_fp(p);
 	frame.sp = thread_saved_sp(p);
 	frame.pc = thread_saved_pc(p);
+	stack_page = (unsigned long)task_stack_page(p);
 	do {
 		if (frame.sp < stack_page ||
 		    frame.sp >= stack_page + THREAD_SIZE ||
 		    unwind_frame(&frame))
-			goto out;
-		if (!in_sched_functions(frame.pc)) {
-			ret = frame.pc;
-			goto out;
-		}
+			return 0;
+		if (!in_sched_functions(frame.pc))
+			return frame.pc;
 	} while (count ++ < 16);
 	return 0;
-
-out:
-	put_task_stack(p);
-	return ret;
 }
 
 unsigned long arch_align_stack(unsigned long sp)

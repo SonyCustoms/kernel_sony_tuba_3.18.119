@@ -47,11 +47,6 @@ int conn_md_add_user(uint32 u_id, CONN_MD_BRIDGE_OPS *p_ops)
 	if (NULL == p_user) {
 		/*memory allocation for user information */
 		p_user = kmalloc(sizeof(CONN_MD_USER), GFP_ATOMIC);
-		if (p_user == NULL) {
-			CONN_MD_ERR_FUNC("kmalloc failed\n");
-			mutex_unlock(&p_user_list->lock);
-			return CONN_MD_ERR_OTHERS;
-		}
 		INIT_LIST_HEAD(&p_user->entry);
 		list_add_tail(&p_user->entry, &p_user_list->list);
 		p_user->u_id = u_id;
@@ -219,8 +214,7 @@ int conn_md_send_msg(ipc_ilm_t *ilm)
 		/*copy local_para_ptr structure */
 		memcpy(p_local_para, ilm->local_para_ptr, sizeof(local_para_struct));
 		/*copy data from local_para_ptr structure */
-		memcpy(p_local_para->data, ilm->local_para_ptr->data,
-				msg_info_len - sizeof(struct local_para));
+		memcpy(p_local_para->data, ilm->local_para_ptr->data, msg_info_len);
 
 		CONN_MD_DBG_FUNC("p_local_para:0x%08x, msg_len:%d\n", p_local_para, p_local_para->msg_len);
 

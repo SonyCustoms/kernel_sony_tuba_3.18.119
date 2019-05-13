@@ -40,7 +40,7 @@ void *ion_heap_map_kernel(struct ion_heap *heap,
 
 	if (!pages) {
 		IONMSG("%s vmalloc failed pages is null.\n", __func__);
-		return ERR_PTR(-ENOMEM);
+		return NULL;
 	}
 
 	if (buffer->flags & ION_FLAG_CACHED)

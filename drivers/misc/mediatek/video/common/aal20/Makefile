@@ -44,6 +44,3 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/videox/mt6
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/mt6753/
 endif
 
-ifeq (y, $(filter y, $(CONFIG_MACH_MT6755)))
-    ccflags-y += -DAMS_AAL_SUPPORT_KERNEL_API
-endif

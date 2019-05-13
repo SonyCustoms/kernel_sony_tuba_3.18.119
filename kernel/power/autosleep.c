@@ -12,6 +12,12 @@
 
 #include "power.h"
 
+
+#ifdef CONFIG_CCI_KLOG
+#include <linux/cciklog.h>
+#endif // #ifdef CONFIG_CCI_KLOG
+
+
 #define HIB_AUTOSLEEP_DEBUG 1
 #define _TAG_HIB_M "HIB/AUTOSLEEP"
 #if (HIB_AUTOSLEEP_DEBUG)
@@ -131,6 +137,14 @@ int pm_autosleep_set_state(suspend_state_t state)
 	__pm_relax(autosleep_ws);
 
 	if (state > PM_SUSPEND_ON) {
+
+#ifdef CCI_KLOG_ALLOW_FORCE_PANIC
+		if(get_force_panic_when_suspend())
+		{
+			panic("suspend_panic");
+		}
+#endif // #ifdef CCI_KLOG_ALLOW_FORCE_PANIC
+
 		pm_wakep_autosleep_enabled(true);
 		queue_up_suspend_work();
 	} else {

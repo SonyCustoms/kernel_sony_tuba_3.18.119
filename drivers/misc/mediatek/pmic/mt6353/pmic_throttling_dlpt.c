@@ -1850,7 +1850,7 @@ void bat_h_int_handler(void)
 	lbat_min_en_setting(1);
 #endif
 
-	PMICLOG("Reg[0x%x]=0x%x, Reg[0x%x]=0x%x, Reg[0x%x]=0x%x\n",
+	pr_err("Reg[0x%x]=0x%x, Reg[0x%x]=0x%x, Reg[0x%x]=0x%x\n",
 		PMIC_AUXADC_LBAT_VOLT_MAX_ADDR, upmu_get_reg_value(PMIC_AUXADC_LBAT_VOLT_MAX_ADDR),
 		PMIC_AUXADC_LBAT_VOLT_MIN_ADDR, upmu_get_reg_value(PMIC_AUXADC_LBAT_VOLT_MIN_ADDR),
 		PMIC_RG_INT_EN_BAT_L_ADDR, upmu_get_reg_value(PMIC_RG_INT_EN_BAT_L_ADDR)
@@ -1893,7 +1893,7 @@ void bat_l_int_handler(void)
 	lbat_max_en_setting(1);
 #endif
 
-	PMICLOG("Reg[0x%x]=0x%x, Reg[0x%x]=0x%x, Reg[0x%x]=0x%x\n",
+	pr_err("Reg[0x%x]=0x%x, Reg[0x%x]=0x%x, Reg[0x%x]=0x%x\n",
 		PMIC_AUXADC_LBAT_VOLT_MAX_ADDR, upmu_get_reg_value(PMIC_AUXADC_LBAT_VOLT_MAX_ADDR),
 		PMIC_AUXADC_LBAT_VOLT_MIN_ADDR, upmu_get_reg_value(PMIC_AUXADC_LBAT_VOLT_MIN_ADDR),
 		PMIC_RG_INT_EN_BAT_L_ADDR, upmu_get_reg_value(PMIC_RG_INT_EN_BAT_L_ADDR)
@@ -2108,7 +2108,7 @@ int pmic_throttling_dlpt_init(void)
 #endif
 #if defined(CONFIG_MTK_SMART_BATTERY)
 	struct device_node *np;
-	u32 val = 0;
+	u32 val;
 	char *path = "/bus/BAT_METTER";
 
 	np = of_find_node_by_path(path);

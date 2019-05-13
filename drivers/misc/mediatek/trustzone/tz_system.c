@@ -31,7 +31,9 @@
 
 #include <linux/trusty/trusty_ipc.h>
 
+#ifdef CONFIG_ARM64
 #define ARM_SMC_CALLING_CONVENTION
+#endif
 
 #ifndef CONFIG_TRUSTY
 static TZ_RESULT KREE_ServPuts(u32 op, u8 param[REE_SERVICE_BUFFER_SIZE]);
@@ -172,8 +174,7 @@ TZ_RESULT KREE_TeeServiceCallNoCheck(KREE_SESSION_HANDLE handle,
 	return (TZ_RESULT) tz_service_call(&smc_arg);
 }
 #else /* ~CONFIG_TRUSTY */
-#define SMC_MTEE_SERVICE_CALL (0x72000008)
-#define SMC_MTEE32_SERVICE_CALL (0x32000008)
+#define SMC_MTEE_SERVICE_CALL (0x32000008)
 static u32 tz_service_call(u32 handle, u32 op, u32 arg1, unsigned long arg2)
 {
 #ifdef CONFIG_ARM64
@@ -228,76 +229,12 @@ static u32 tz_service_call(u32 handle, u32 op, u32 arg1, unsigned long arg2)
 #else
 	u32 param[REE_SERVICE_BUFFER_SIZE / sizeof(u32)];
 
-	register u32 r0 asm("r0") = SMC_MTEE32_SERVICE_CALL;
-	register u32 r1 asm("r1") = handle;
-	register u32 r2 asm("r2") = op;
-	register u32 r3 asm("r3") = arg1;
-	register u32 r4 asm("r4") = arg2;
-	register u32 r5 asm("r5") = (unsigned long)param;
-
-	asm volatile (".arch_extension sec\n"
-		      __asmeq("%0", "r0")
-		      __asmeq("%1", "r1")
-		      __asmeq("%2", "r2")
-		      __asmeq("%3", "r3")
-		      __asmeq("%4", "r0")
-		      __asmeq("%5", "r1")
-		      __asmeq("%6", "r2")
-		      __asmeq("%7", "r3")
-		      __asmeq("%8", "r4")
-		      __asmeq("%9", "r5")
-		      "smc    #0\n" :
-		      "=r"(r0), "=r"(r1), "=r"(r2), "=r"(r3) :
-		      "r"(r0), "r"(r1), "r"(r2), "r"(r3), "r"(r4), "r"(r5) :
-		      "memory");
-
-	while (r1 != 0) {
-		/* Need REE service */
-		/* r2 is the command, parameter in param buffer */
-		r1 = tz_ree_service(r2, (u8 *) param);
-
-		/* Work complete. Going Back to TZ again */
-		r0 = SMC_MTEE32_SERVICE_CALL;
-		asm volatile (".arch_extension sec\n"
-			      __asmeq("%0", "r0")
-			      __asmeq("%1", "r1")
-			      __asmeq("%2", "r2")
-			      __asmeq("%3", "r3")
-			      __asmeq("%4", "r0")
-			      __asmeq("%5", "r1")
-			      __asmeq("%6", "r2")
-			      "smc    #0\n" :
-			      "=r"(r0), "=r"(r1), "=r"(r2), "=r"(r3) :
-			      "r"(r0), "r"(r1), "r"(r2) :
-			      "memory");
-	}
-
-	return r3;
-#endif
-
-}
-
-TZ_RESULT KREE_TeeServiceCallNoCheck(KREE_SESSION_HANDLE handle,
-					uint32_t command, uint32_t paramTypes,
-					MTEEC_PARAM param[4])
-{
-	return (TZ_RESULT) tz_service_call(handle, command, paramTypes,
-						(unsigned long) param);
-}
-#endif /* CONFIG_TRUSTY */
-
-#else
-static u32 tz_service_call(u32 handle, u32 op, u32 arg1, u32 arg2)
-{
-	/* Reserve buffer for REE service call parameters */
-	u32 param[REE_SERVICE_BUFFER_SIZE / sizeof(u32)];
-
-	register u32 r0 asm("r0") = SMC_MTEE_SERVICE_CALL;
-	register u32 r1 asm("r1") = handle;
-	register u32 r2 asm("r2") = op;
-	register u32 r3 asm("r3") = arg1;
-	register u32 r4 asm("r4") = arg2;
-	register u32 r5 asm("r5") = (u32) param;
+	register u32 r0 asm("x0") = SMC_MTEE_SERVICE_CALL;
+	register u32 r1 asm("x1") = handle;
+	register u32 r2 asm("x2") = op;
+	register u32 r3 asm("x3") = arg1;
+	register u32 r4 asm("x4") = arg2;
+	register u32 r5 asm("x5") = (unsigned long)param;
 
 	asm volatile (".arch_extension sec\n"
 		      __asmeq("%0", "r0")
@@ -320,7 +257,7 @@ static u32 tz_service_call(u32 handle, u32 op, u32 arg1, u32 arg2)
 		r1 = tz_ree_service(r0, (u8 *) param);
 
 		/* Work complete. Going Back to TZ again */
-		r0 = 0xffffffff;
+		r0 = 0x32003000;
 		asm volatile (".arch_extension sec\n"
 			      __asmeq("%0", "r0")
 			      __asmeq("%1", "r1")
@@ -331,6 +268,64 @@ static u32 tz_service_call(u32 handle, u32 op, u32 arg1, u32 arg2)
 			      "smc    #0\n" :
 			      "=r"(r0), "=r"(r1), "=r"(r2) :
 			      "r"(r0), "r"(r1), "r"(r5) :
+			      "memory");
+	}
+
+	return r2;
+#endif
+
+}
+
+TZ_RESULT KREE_TeeServiceCallNoCheck(KREE_SESSION_HANDLE handle,
+					uint32_t command, uint32_t paramTypes,
+					MTEEC_PARAM param[4])
+{
+	return (TZ_RESULT) tz_service_call(handle, command, paramTypes,
+						(unsigned long) param);
+}
+#endif /* CONFIG_TRUSTY */
+
+#else
+static u32 tz_service_call(u32 handle, u32 op, u32 arg1, u32 arg2)
+{
+	/* Reserve buffer for REE service call parameters */
+	u32 param[REE_SERVICE_BUFFER_SIZE / sizeof(u32)];
+
+	register u32 r0 asm("r0") = handle;
+	register u32 r1 asm("r1") = op;
+	register u32 r2 asm("r2") = arg1;
+	register u32 r3 asm("r3") = arg2;
+	register u32 r4 asm("r4") = (u32) param;
+
+	asm volatile (".arch_extension sec\n"
+		      __asmeq("%0", "r0")
+		      __asmeq("%1", "r1")
+		      __asmeq("%2", "r0")
+		      __asmeq("%3", "r1")
+		      __asmeq("%4", "r2")
+		      __asmeq("%5", "r3")
+		      __asmeq("%6", "r4")
+		      "smc    #0\n" :
+		      "=r"(r0), "=r"(r1) :
+		      "r"(r0), "r"(r1), "r"(r2), "r"(r3), "r"(r4) :
+		      "memory");
+
+	while (r1 != 0) {
+		/* Need REE service */
+		/* r0 is the command, parameter in param buffer */
+		r1 = tz_ree_service(r0, (u8 *) param);
+
+		/* Work complete. Going Back to TZ again */
+		r0 = 0xffffffff;
+		asm volatile (".arch_extension sec\n"
+			      __asmeq("%0", "r0")
+			      __asmeq("%1", "r1")
+			      __asmeq("%2", "r0")
+			      __asmeq("%3", "r1")
+			      __asmeq("%4", "r4")
+			      "smc    #0\n" :
+			      "=r"(r0), "=r"(r1) :
+			      "r"(r0), "r"(r1), "r"(r4) :
 			      "memory");
 	}
 
@@ -575,35 +570,6 @@ TZ_RESULT KREE_CreateSession(const char *ta_uuid, KREE_SESSION_HANDLE *pHandle)
 	return ret;
 }
 EXPORT_SYMBOL(KREE_CreateSession);
-
-TZ_RESULT KREE_CreateSessionWithTag(const char *ta_uuid, KREE_SESSION_HANDLE *pHandle, const char *tag)
-{
-	uint32_t paramTypes;
-	MTEEC_PARAM param[4];
-	TZ_RESULT ret;
-
-	if (!ta_uuid || !pHandle)
-		return TZ_RESULT_ERROR_BAD_PARAMETERS;
-
-	param[0].mem.buffer = (char *)ta_uuid;
-	param[0].mem.size = strlen(ta_uuid) + 1;
-	param[1].mem.buffer = (char *)tag;
-	if (tag != NULL && strlen(tag) != 0)
-		param[1].mem.size = strlen(tag) + 1;
-	else
-		param[1].mem.size = 0;
-	paramTypes = TZ_ParamTypes3(TZPT_MEM_INPUT, TZPT_MEM_INPUT, TZPT_VALUE_OUTPUT);
-
-	ret = KREE_TeeServiceCall(
-			(KREE_SESSION_HANDLE) MTEE_SESSION_HANDLE_SYSTEM,
-			TZCMD_SYS_SESSION_CREATE_WITH_TAG, paramTypes, param);
-
-	if (ret == TZ_RESULT_SUCCESS)
-		*pHandle = (KREE_SESSION_HANDLE)param[2].value.a;
-
-	return ret;
-}
-EXPORT_SYMBOL(KREE_CreateSessionWithTag);
 
 TZ_RESULT KREE_CloseSession(KREE_SESSION_HANDLE handle)
 {

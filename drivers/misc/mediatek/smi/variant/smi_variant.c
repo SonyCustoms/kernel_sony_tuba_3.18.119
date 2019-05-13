@@ -39,15 +39,6 @@
 #include <linux/compat.h>
 #endif
 
-#ifdef CONFIG_ARCH_MT8173
-#define MMDVFS_ENABLE
-#endif
-
-#ifdef MMDVFS_ENABLE
-#include "mmdvfs_mgr_8173.h"
-#endif
-
-
 #include "mt_smi.h"
 
 #include "smi_reg.h"
@@ -189,6 +180,7 @@ int mtk_smi_larb_clock_on(int larbid, bool pm)
 		return -EINVAL;
 
 	ret = _mtk_smi_larb_get(smi_data->larb[larbid], pm);
+	WARN_ON(ret);
 	if (ret)
 		return ret;
 
@@ -202,8 +194,7 @@ void mtk_smi_larb_clock_off(int larbid, bool pm)
 	if (!smi_data || larbid < 0 || larbid >= smi_data->larb_nr)
 		return;
 
-	if (smi_data->larbref[larbid] <= 0)
-		SMIMSG("larb ref <=0, larb %d ref %d\n", larbid, smi_data->larbref[larbid]);
+	WARN_ON(smi_data->larbref[larbid] <= 0);
 	if (!smi_clk_always_on)
 		_mtk_smi_larb_put(smi_data->larb[larbid], pm);
 	smi_data->larbref[larbid]--;
@@ -477,7 +468,7 @@ static int smi_bwc_config(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
 /* Debug - S */
 /* SMIMSG("SMI setTo%d,%s,%d\n" , p_conf->scenario , (p_conf->b_on_off ? "on" : "off") , ePreviousFinalScen); */
 /* Debug - E */
-#ifdef MMDVFS_ENABLE
+#if 0
 	if (p_conf->b_on_off) {
 		/* set mmdvfs step according to certain scenarios */
 		mmdvfs_notify_scenario_enter(p_conf->scenario);
@@ -523,11 +514,6 @@ static int smi_bwc_config(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
 		if (g_SMIInfo.pu4ConcurrencyTable[i])
 			u4Concurrency |= (1 << i);
 	}
-
-#ifdef MMDVFS_ENABLE
-		/* notify mmdvfs concurrency */
-		mmdvfs_notify_scenario_concurrency(u4Concurrency);
-#endif
 
 	if ((1 << SMI_BWC_SCEN_MM_GPU) & u4Concurrency)
 		eFinalScen = SMI_BWC_SCEN_MM_GPU;
@@ -834,8 +820,7 @@ static long smi_ioctl(struct file *pFile, unsigned int cmd, unsigned long param)
 		}
 		break;
 
-#ifdef MMDVFS_ENABLE
-	case MTK_IOC_MMDVFS_CMD:
+	/*case MTK_IOC_MMDVFS_CMD:
 		{
 			MTK_MMDVFS_CMD mmdvfs_cmd;
 
@@ -849,9 +834,7 @@ static long smi_ioctl(struct file *pFile, unsigned int cmd, unsigned long param)
 				return -EFAULT;
 
 			break;
-	}
-#endif
-
+	}*/
 	default:
 		return -1;
 	}
@@ -1324,9 +1307,6 @@ static int __init smi_init(void)
 	spin_lock_init(&g_SMIInfo.SMI_lock);
 
 	SMI_DBG_Init();
-#ifdef MMDVFS_ENABLE
-	mmdvfs_init(&g_smi_bwc_mm_info);
-#endif
 	fb_register_client(&mtk_smi_variant_event_notifier);
 	SMIMSG("smi_init done\n");
 

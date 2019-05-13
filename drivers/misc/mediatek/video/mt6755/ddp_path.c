@@ -793,13 +793,8 @@ static void ddp_print_scenario(DDP_SCENARIO_ENUM scenario)
 	int num = ddp_get_module_num(scenario);
 
 	for (i = 0; i < num; i++) {
-		if (strlen(path) + strlen(ddp_get_module_name(module_list_scenario[scenario][i])) < 256) {
-			strncat(path, ddp_get_module_name(module_list_scenario[scenario][i]),
-				sizeof(path) - strlen(path) - 1);
-		} else {
-			DISPERR("%s path string array size is not enough\n", __func__);
-			break;
-		}
+		ASSERT(strlen(path) + strlen(ddp_get_module_name(module_list_scenario[scenario][i])) < 256);
+		strncat(path, ddp_get_module_name(module_list_scenario[scenario][i]), sizeof(path));
 	}
 
 	DISPMSG("scenario %s have modules: %s\n", ddp_get_scenario_name(scenario), path);

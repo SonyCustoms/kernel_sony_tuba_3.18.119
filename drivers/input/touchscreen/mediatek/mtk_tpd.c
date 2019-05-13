@@ -1,16 +1,7 @@
 /******************************************************************************
  * mtk_tpd.c - MTK Android Linux Touch Panel Device Driver               *
  *                                                                            *
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ * Copyright 2008-2009 MediaTek Co.,Ltd.                                      *
  *                                                                            *
  * DESCRIPTION:                                                               *
  *     this file provide basic touch panel event to input sub system          *
@@ -55,16 +46,13 @@
 #ifdef CONFIG_COMPAT
 #define COMPAT_TPD_GET_FILTER_PARA _IOWR(TOUCH_IOC_MAGIC, 2, struct tpd_filter_t)
 #endif
-
-static struct tpd_driver_t *g_tpd_drv;
-
 struct tpd_filter_t tpd_filter;
 struct tpd_dts_info tpd_dts_data;
 EXPORT_SYMBOL(tpd_dts_data);
 
 struct pinctrl *pinctrl1;
 struct pinctrl_state *pins_default;
-struct pinctrl_state *eint_as_int, *eint_output0, *eint_output1, *rst_output0, *rst_output1, *pwr_output0, *pwr_output1;
+struct pinctrl_state *eint_as_int, *eint_output0, *eint_output1, *rst_output0, *rst_output1, *tpid_input;
 struct of_device_id touch_of_match[] = {
 	{ .compatible = "mediatek,mt6570-touch", },
 	{ .compatible = "mediatek,mt6735-touch", },
@@ -85,6 +73,7 @@ void tpd_get_dts_info(void)
 {
 	struct device_node *node1 = NULL;
 	int key_dim_local[16], i;
+
 	node1 = of_find_matching_node(node1, touch_of_match);
 	if (node1) {
 		of_property_read_u32(node1, "tpd-max-touch-num", &tpd_dts_data.touch_max_num);
@@ -140,20 +129,12 @@ void tpd_gpio_output(int pin, int level)
 {
 	mutex_lock(&tpd_set_gpio_mutex);
 	TPD_DEBUG("[tpd]tpd_gpio_output pin = %d, level = %d\n", pin, level);
-	if (pin == 2) {
-		if (level)
-			pinctrl_select_state(pinctrl1, pwr_output1);
-		else
-			pinctrl_select_state(pinctrl1, pwr_output0);	
-	}
-	else if (pin == 1) 
-	{
+	if (pin == 1) {
 		if (level)
 			pinctrl_select_state(pinctrl1, eint_output1);
 		else
 			pinctrl_select_state(pinctrl1, eint_output0);
-	} 
-	else {
+	} else {
 		if (level)
 			pinctrl_select_state(pinctrl1, rst_output1);
 		else
@@ -163,6 +144,19 @@ void tpd_gpio_output(int pin, int level)
 }
 EXPORT_SYMBOL(tpd_gpio_output);
 
+//colby add for TPID start
+void tpd_gpio_tpid(int pin)
+{
+	mutex_lock(&tpd_set_gpio_mutex);
+	TPD_DEBUG("[tpd]tpd_gpio_tpid pin = %d\n", pin);
+	if (pin == TPID_GPIO) {
+		pinctrl_select_state(pinctrl1, tpid_input);
+	} else {
+		TPD_DEBUG("[tpd]wrong gpio of TPID\n");
+	}
+	mutex_unlock(&tpd_set_gpio_mutex);
+}
+//colby add for TPID start
 int tpd_get_gpio_info(struct platform_device *pdev)
 {
 	int ret;
@@ -209,18 +203,14 @@ int tpd_get_gpio_info(struct platform_device *pdev)
 		dev_err(&pdev->dev, "fwq Cannot find touch pinctrl state_rst_output1!\n");
 		return ret;
 	}
-	pwr_output0 = pinctrl_lookup_state(pinctrl1, "state_pwr_output0");
-	if (IS_ERR(pwr_output0)) {
-		ret = PTR_ERR(pwr_output0);
-		dev_err(&pdev->dev, "fwq Cannot find touch pinctrl state_pwr_output0!\n");
+//colby add for TPID start
+	tpid_input = pinctrl_lookup_state(pinctrl1, "state_tpid");
+	if (IS_ERR(tpid_input)) {
+		ret = PTR_ERR(tpid_input);
+		dev_err(&pdev->dev, "fwq Cannot find touch pinctrl state_tpid!\n");
 		return ret;
 	}
-	pwr_output1 = pinctrl_lookup_state(pinctrl1, "state_pwr_output1");
-	if (IS_ERR(pwr_output1)) {
-		ret = PTR_ERR(pwr_output1);
-		dev_err(&pdev->dev, "fwq Cannot find touch pinctrl state_pwr_output1!\n");
-		return ret;
-	}
+//colby add for TPID end
 	TPD_DEBUG("[tpd%d] mt_tpd_pinctrl----------\n", pdev->id);
 	return 0;
 }
@@ -407,34 +397,43 @@ static int tpd_fb_notifier_callback(struct notifier_block *self, unsigned long e
 
 	evdata = data;
 	/* If we aren't interested in this event, skip it immediately ... */
-	if (event != FB_EVENT_BLANK)
-		return 0;
-
-	blank = *(int *)evdata->data;
-	TPD_DMESG("fb_notify(blank=%d)\n", blank);
-	switch (blank) {
-	case FB_BLANK_UNBLANK:
-		TPD_DMESG("LCD ON Notify\n");
-		if (g_tpd_drv && tpd_suspend_flag) {
-			err = queue_work(touch_resume_workqueue, &touch_resume_work);
-			if (!err) {
-				TPD_DMESG("start touch_resume_workqueue failed\n");
-				return err;
-			}
+	//if (event != FB_EVENT_BLANK)
+	//	return 0;
+	if (event == FB_EVENT_BLANK) {
+		blank = *(int *)evdata->data;
+		TPD_DMESG("fb_notify(blank=%d)\n", blank);
+		switch (blank) {
+			case FB_BLANK_UNBLANK:
+				TPD_DMESG("LCD ON Notify\n");
+				if (g_tpd_drv && tpd_suspend_flag) {
+					err = queue_work(touch_resume_workqueue, &touch_resume_work);
+					if (!err) {
+						TPD_DMESG("start touch_resume_workqueue failed\n");
+						return err;
+					}
+				}
+				break;
+			default:
+				break;
 		}
-		break;
-	case FB_BLANK_POWERDOWN:
-		TPD_DMESG("LCD OFF Notify\n");
-		if (g_tpd_drv && !tpd_suspend_flag) {
-			err = cancel_work_sync(&touch_resume_work);
-			if (!err)
-				TPD_DMESG("cancel touch_resume_workqueue err = %d\n", err);
-			g_tpd_drv->suspend(NULL);
+	}
+	if (event == FB_EARLY_EVENT_BLANK) {
+		blank = *(int *)evdata->data;
+		TPD_DMESG("fb_notify(blank=%d)\n", blank);
+		switch (blank) {
+			case FB_BLANK_POWERDOWN:
+				TPD_DMESG("LCD OFF Notify\n");
+				if (g_tpd_drv && !tpd_suspend_flag) {
+					err = cancel_work_sync(&touch_resume_work);
+					if (!err)
+						TPD_DMESG("cancel touch_resume_workqueue err = %d\n", err);
+					g_tpd_drv->suspend(NULL);
+				}
+				tpd_suspend_flag = 1;
+				break;
+			default:
+				break;
 		}
-		tpd_suspend_flag = 1;
-		break;
-	default:
-		break;
 	}
 	return 0;
 }
@@ -635,7 +634,6 @@ static int tpd_probe(struct platform_device *pdev)
 
 	return 0;
 }
-
 EXPORT_SYMBOL(tpd_probe);
 EXPORT_SYMBOL(tpd);
 

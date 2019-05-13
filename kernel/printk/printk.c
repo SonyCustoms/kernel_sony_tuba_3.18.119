@@ -34,6 +34,7 @@
 #include <linux/memblock.h>
 #include <linux/aio.h>
 #include <linux/syscalls.h>
+#include <linux/suspend.h>
 #include <linux/kexec.h>
 #include <linux/kdb.h>
 #include <linux/ratelimit.h>
@@ -55,6 +56,12 @@
 #endif
 #define CREATE_TRACE_POINTS
 #include <trace/events/printk.h>
+
+
+#ifdef CONFIG_CCI_KLOG
+#include <linux/cciklog.h>
+#endif // #ifdef CONFIG_CCI_KLOG
+
 
 #include "console_cmdline.h"
 #include "braille.h"
@@ -102,11 +109,8 @@ static int log_count;
 
 static int parse_log_file(void);
 
-#endif
-
-void set_detect_count(int count)
+inline void set_detect_count(int count)
 {
-#if defined(CONFIG_MT_ENG_BUILD) && defined(CONFIG_LOG_TOO_MUCH_WARNING)
 	if (count >= detect_count)
 		detect_count = count;
 	else {
@@ -117,38 +121,23 @@ void set_detect_count(int count)
 		detect_count_change = true;
 	}
 	pr_info("Printk too much criteria: %d  delay_flag: %d\n", detect_count, detect_count_change);
-#endif
 }
-EXPORT_SYMBOL(set_detect_count);
 
-int get_detect_count(void)
+inline int get_detect_count(void)
 {
-#if defined(CONFIG_MT_ENG_BUILD) && defined(CONFIG_LOG_TOO_MUCH_WARNING)
 	return detect_count;
-#else
-	return 0;
-#endif
 }
-EXPORT_SYMBOL(get_detect_count);
 
-void set_logtoomuch_enable(int value)
+inline void set_logtoomuch_enable(int value)
 {
-#if defined(CONFIG_MT_ENG_BUILD) && defined(CONFIG_LOG_TOO_MUCH_WARNING)
 	printk_too_much_enable = value;
-#endif
 }
-EXPORT_SYMBOL(set_logtoomuch_enable);
 
-int get_logtoomuch_enable(void)
+inline int get_logtoomuch_enable(void)
 {
-#if defined(CONFIG_MT_ENG_BUILD) && defined(CONFIG_LOG_TOO_MUCH_WARNING)
 	return printk_too_much_enable;
-#else
-	return 0;
-#endif
 }
-EXPORT_SYMBOL(get_logtoomuch_enable);
-
+#endif
 #ifdef CONFIG_EARLY_PRINTK_DIRECT
 extern void printascii(char *);
 #endif
@@ -179,6 +168,7 @@ int console_printk[4] = {
 	CONSOLE_LOGLEVEL_MIN,		/* minimum_console_loglevel */
 	CONSOLE_LOGLEVEL_DEFAULT,	/* default_console_loglevel */
 };
+EXPORT_SYMBOL_GPL(console_printk);
 
 /* Deferred messaged from sched code are marked by this special level */
 #define SCHED_MESSAGE_LOGLEVEL -2
@@ -469,6 +459,12 @@ static u32 log_next(u32 idx)
 	return idx + msg->len;
 }
 
+
+#ifdef CCI_KLOG_ALLOW_FORCE_PANIC
+#define PRINTK_CPU_INFO
+#endif // #ifdef CCI_KLOG_ALLOW_FORCE_PANIC
+
+
 /*
  * Check whether there is enough free space for the given message.
  *
@@ -559,6 +555,10 @@ static int log_store(int facility, int level,
 	struct printk_log *msg;
 	u32 size, pad_len;
 	u16 trunc_msg_len = 0;
+
+#ifdef CONFIG_CCI_KLOG
+	char buf[5] = {0};
+#endif // #ifdef CONFIG_CCI_KLOG
 #ifdef CONFIG_PRINTK_MT_PREFIX
 	int this_cpu = smp_processor_id();
 	char state = __raw_get_cpu_var(printk_state);
@@ -608,6 +608,26 @@ static int log_store(int facility, int level,
 		memset(log_buf + log_next_idx, 0, sizeof(struct printk_log));
 		log_next_idx = 0;
 	}
+
+
+#ifdef CONFIG_CCI_KLOG
+	level &= 7;
+	flags &= 0x1f;
+#if CCI_KLOG_CRASH_SIZE
+	set_kernel_log_level(level);
+#endif // #if CCI_KLOG_CRASH_SIZE
+	snprintf(buf, 4, "<%X>", level);
+	cklc_append_time_header();
+	cklc_append_str(buf, 3);
+	cklc_append_str(dict, dict_len);
+	cklc_append_separator();
+	cklc_append_str(text, text_len);
+	if(flags & LOG_NEWLINE)
+	{
+		cklc_append_newline();
+	}
+#endif // #ifdef CONFIG_CCI_KLOG
+
 
 	/* fill message */
 	msg = (struct printk_log *)(log_buf + log_next_idx);
@@ -1674,7 +1694,7 @@ static void call_console_drivers(int level, const char *text, size_t len)
 	char cur_time[32];
 	int idx = 0;
 
-	char dump_uart[64];
+	int uart_timeout_cnt = -1;
 #endif
 
 	trace_console(text, len);
@@ -1720,9 +1740,7 @@ static void call_console_drivers(int level, const char *text, size_t len)
 	/* console duration over 15 seconds, Calc console write rate recently */
 	if ((local_clock() - con_dura_time) > 15000000000) {
 #ifdef CONFIG_MTK_SERIAL
-		/* dump uart regs */
-		memset(dump_uart, 0x00, sizeof(dump_uart));
-		mtk_uart_dump_reg(dump_uart);
+		uart_timeout_cnt = mtk_uart_dump_timeout_cnt();
 #endif
 		/* stat console list */
 		memset(con_name, 0x00, sizeof(con_name));
@@ -1750,8 +1768,8 @@ static void call_console_drivers(int level, const char *text, size_t len)
 		scnprintf(cur_time, sizeof(cur_time), "[%llu.%06lu]", tmp2, rem_nsec/1000);
 
 		aee_kernel_warning_api(__FILE__, __LINE__, DB_OPT_DEFAULT | DB_OPT_FTRACE,
-			"Console Lock dur over 15 seconds", "%s %s%s, cpu: %d, ConList(%d): %s\n",
-			cur_time, dump_uart, aee_str, smp_processor_id(), cnt, con_name);
+			"Console Lock dur over 15 seconds", "%s uart->timeout_count: %d, %s, cpu: %d, ConList(%d): %s",
+			cur_time, uart_timeout_cnt, aee_str, smp_processor_id(), cnt, con_name);
 
 		con_dura_time = local_clock();
 	}
@@ -1789,6 +1807,13 @@ void aee_wdt_zap_locks(void)
 	raw_spin_lock_init(&logbuf_lock);
 	/* And make sure that we print immediately */
 	sema_init(&console_sem, 1);
+}
+
+/* for aee_wdt test case */
+void aee_wdt_logbuf_lock(void)
+{
+	raw_spin_lock(&logbuf_lock);
+	down(&console_sem);
 }
 #endif
 
@@ -2407,6 +2432,7 @@ void suspend_console(void)
 	console_suspended = 1;
 	up_console_sem();
 }
+EXPORT_SYMBOL_GPL(suspend_console);
 
 void resume_console(void)
 {
@@ -2416,6 +2442,7 @@ void resume_console(void)
 	console_suspended = 0;
 	console_unlock();
 }
+EXPORT_SYMBOL_GPL(resume_console);
 
 /**
  * console_cpu_notify - print deferred console messages after CPU hotplug

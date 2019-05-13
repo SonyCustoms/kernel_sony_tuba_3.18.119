@@ -2,5 +2,5 @@
 # Makefile for misc devices that really don't fit anywhere else.
 #
 
-obj-y += LC898212XDAF.o AfInter.o AfInit.o AfSTMV.o
+obj-y += LC898212XDAF.o AfInter.o AfInit.o AfSTMV.o lc898212xdaf_pwrsvg.o
 

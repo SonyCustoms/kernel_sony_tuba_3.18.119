@@ -234,16 +234,16 @@ static void mdee_info_dump_v2(struct md_ee *mdee)
 	/* Add additional info */
 	switch (dumper->more_info) {
 	case MD_EE_CASE_ONLY_SWINT:
-		strncat(ex_info, "\nOnly SWINT case\n", (EE_BUF_LEN_UMOLY - strlen(ex_info)));
+		snprintf(ex_info, EE_BUF_LEN_UMOLY, "%s%s", ex_info, "\nOnly SWINT case\n");
 		break;
 	case MD_EE_CASE_SWINT_MISSING:
-		strncat(ex_info, "\nSWINT missing case\n", (EE_BUF_LEN_UMOLY - strlen(ex_info)));
+		snprintf(ex_info, EE_BUF_LEN_UMOLY, "%s%s", ex_info, "\nSWINT missing case\n");
 		break;
 	case MD_EE_CASE_ONLY_EX:
-		strncat(ex_info, "\nOnly EX case\n", (EE_BUF_LEN_UMOLY - strlen(ex_info)));
+		snprintf(ex_info, EE_BUF_LEN_UMOLY, "%s%s", ex_info, "\nOnly EX case\n");
 		break;
 	case MD_EE_CASE_ONLY_EX_OK:
-		strncat(ex_info, "\nOnly EX_OK case\n", (EE_BUF_LEN_UMOLY - strlen(ex_info)));
+		snprintf(ex_info, EE_BUF_LEN_UMOLY, "%s%s", ex_info, "\nOnly EX_OK case\n");
 		break;
 	case MD_EE_CASE_AP_MASK_I_BIT_TOO_LONG:
 		i_bit_ex_info = kmalloc(EE_BUF_LEN_UMOLY, GFP_ATOMIC);
@@ -256,7 +256,7 @@ static void mdee_info_dump_v2(struct md_ee *mdee)
 		break;
 	case MD_EE_CASE_TX_TRG:
 	case MD_EE_CASE_ISR_TRG:
-		strncat(ex_info, "\n[Others] May I-Bit dis too long\n", (EE_BUF_LEN_UMOLY - strlen(ex_info)));
+		snprintf(ex_info, EE_BUF_LEN_UMOLY, "%s%s", ex_info, "\n[Others] May I-Bit dis too long\n");
 		break;
 	case MD_EE_CASE_NO_RESPONSE:
 		/* use strcpy, otherwise if this happens after a MD EE, the former EE info will be printed out */
@@ -275,16 +275,16 @@ static void mdee_info_dump_v2(struct md_ee *mdee)
 	CCCI_NORMAL_LOG(md_id, KERN, "ELM_status: %x\n", c);
 	switch (c) {
 	case 0xFF:
-		strncat(ex_info, "\nno ELM info\n", (EE_BUF_LEN_UMOLY - strlen(ex_info)));
+		snprintf(ex_info, EE_BUF_LEN_UMOLY, "%s%s", ex_info, "\nno ELM info\n");
 		break;
 	case 0xAE:
-		strncat(ex_info, "\nELM rlat:FAIL\n", (EE_BUF_LEN_UMOLY - strlen(ex_info)));
+		snprintf(ex_info, EE_BUF_LEN_UMOLY, "%s%s", ex_info, "\nELM rlat:FAIL\n");
 		break;
 	case 0xBE:
-		strncat(ex_info, "\nELM wlat:FAIL\n", (EE_BUF_LEN_UMOLY - strlen(ex_info)));
+		snprintf(ex_info, EE_BUF_LEN_UMOLY, "%s%s", ex_info, "\nELM wlat:FAIL\n");
 		break;
 	case 0xDE:
-		strncat(ex_info, "\nELM r/wlat:PASS\n", (EE_BUF_LEN_UMOLY - strlen(ex_info)));
+		snprintf(ex_info, EE_BUF_LEN_UMOLY, "%s%s", ex_info, "\nELM r/wlat:PASS\n");
 		break;
 	default:
 		break;

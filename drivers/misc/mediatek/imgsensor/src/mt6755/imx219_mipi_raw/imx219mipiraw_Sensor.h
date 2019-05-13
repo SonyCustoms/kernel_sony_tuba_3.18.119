@@ -2,7 +2,7 @@
  *
  * Filename:
  * ---------
- *	 OV5693mipi_Sensor.h
+ *	 imx219_mipi_Sensor.h
  *
  * Project:
  * --------

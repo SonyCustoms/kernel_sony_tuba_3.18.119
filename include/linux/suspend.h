@@ -7,6 +7,10 @@
 #include <linux/pm.h>
 #include <linux/mm.h>
 #include <linux/freezer.h>
+#ifdef CONFIG_PM_WAKEUP_TIMES
+#include <linux/ktime.h>
+#include <linux/wait.h>
+#endif
 #include <asm/errno.h>
 
 #ifdef CONFIG_VT
@@ -51,6 +55,20 @@ enum suspend_stat_step {
 	SUSPEND_RESUME
 };
 
+#ifdef CONFIG_PM_WAKEUP_TIMES
+struct stats_wakeup_time {
+	ktime_t start;
+	ktime_t end;
+};
+
+struct suspend_stats_queue {
+	int resume_done;
+	wait_queue_head_t wait_queue;
+};
+
+extern struct suspend_stats_queue suspend_stats_queue;
+#endif
+
 struct suspend_stats {
 	int	success;
 	int	fail;
@@ -69,6 +87,16 @@ struct suspend_stats {
 	int	errno[REC_FAILED_NUM];
 	int	last_failed_step;
 	enum suspend_stat_step	failed_steps[REC_FAILED_NUM];
+#ifdef CONFIG_PM_WAKEUP_TIMES
+	struct stats_wakeup_time suspend_min_time;
+	struct stats_wakeup_time suspend_max_time;
+	struct stats_wakeup_time suspend_last_time;
+	ktime_t suspend_avg_time;
+	struct stats_wakeup_time resume_min_time;
+	struct stats_wakeup_time resume_max_time;
+	struct stats_wakeup_time resume_last_time;
+	ktime_t resume_avg_time;
+#endif
 };
 
 extern struct suspend_stats suspend_stats;
@@ -325,8 +353,6 @@ extern int swsusp_page_is_forbidden(struct page *);
 extern void swsusp_set_page_free(struct page *);
 extern void swsusp_unset_page_free(struct page *);
 extern unsigned long get_safe_page(gfp_t gfp_mask);
-extern asmlinkage int swsusp_arch_suspend(void);
-extern asmlinkage int swsusp_arch_resume(void);
 
 extern void hibernation_set_ops(const struct platform_hibernation_ops *ops);
 extern int hibernate(void);
@@ -438,6 +464,82 @@ static inline void unlock_system_sleep(void) {}
 extern bool pm_print_times_enabled;
 #else
 #define pm_print_times_enabled	(false)
+#endif
+
+enum {
+	TOI_CAN_HIBERNATE,
+	TOI_CAN_RESUME,
+	TOI_RESUME_DEVICE_OK,
+	TOI_NORESUME_SPECIFIED,
+	TOI_SANITY_CHECK_PROMPT,
+	TOI_CONTINUE_REQ,
+	TOI_RESUMED_BEFORE,
+	TOI_BOOT_TIME,
+	TOI_NOW_RESUMING,
+	TOI_IGNORE_LOGLEVEL,
+	TOI_TRYING_TO_RESUME,
+	TOI_LOADING_ALT_IMAGE,
+	TOI_STOP_RESUME,
+	TOI_IO_STOPPED,
+	TOI_NOTIFIERS_PREPARE,
+	TOI_CLUSTER_MODE,
+	TOI_BOOT_KERNEL,
+	TOI_DEVICE_HOTPLUG_LOCKED,
+};
+
+#ifdef CONFIG_TOI
+
+/* Used in init dir files */
+extern unsigned long toi_state;
+#define set_toi_state(bit) (set_bit(bit, &toi_state))
+#define clear_toi_state(bit) (clear_bit(bit, &toi_state))
+#define test_toi_state(bit) (test_bit(bit, &toi_state))
+extern int toi_running;
+
+#define test_action_state(bit) (test_bit(bit, &toi_bkd.toi_action))
+extern int try_tuxonice_hibernate(void);
+#ifdef CONFIG_TOI_ENHANCE
+extern int toi_abort_hibernate(void);
+extern int toi_hibernate_fatalerror(void);
+#endif
+
+#else /* !CONFIG_TOI */
+
+#define toi_state		(0)
+#define set_toi_state(bit) do { } while (0)
+#define clear_toi_state(bit) do { } while (0)
+#define test_toi_state(bit) (0)
+#define toi_running (0)
+
+static inline int try_tuxonice_hibernate(void) { return 0; }
+#define test_action_state(bit) (0)
+#ifdef CONFIG_TOI_ENHANCE
+static inline int toi_abort_hibernate(void) { return 0; }
+static inline int toi_hibernate_fatalerror(void) { return 0; }
+#endif
+
+#endif /* CONFIG_TOI */
+
+#ifdef CONFIG_HIBERNATION
+#ifdef CONFIG_TOI
+extern void try_tuxonice_resume(void);
+#else
+#define try_tuxonice_resume() do { } while (0)
+#endif
+
+extern int resume_attempted;
+extern int software_resume(void);
+
+static inline void check_resume_attempted(void)
+{
+	if (resume_attempted)
+		return;
+
+	software_resume();
+}
+#else
+#define check_resume_attempted() do { } while (0)
+#define resume_attempted (0)
 #endif
 
 #ifdef CONFIG_PM_AUTOSLEEP

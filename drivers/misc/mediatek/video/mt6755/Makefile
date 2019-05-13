@@ -41,14 +41,12 @@ obj-y +=	ddp_ovl.o              \
 		compat_mtk_disp_mgr.o  \
 		mtk_mira.o             \
 		disp_helper.o          \
-		disp_dts_gpio.o        \
-		layering_rule.o
+		disp_dts_gpio.o
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/include/                     \
              -I$(srctree)/drivers/misc/mediatek/video/common/                      \
              -I$(srctree)/drivers/misc/mediatek/video/common/rdma10/               \
              -I$(srctree)/drivers/misc/mediatek/video/common/wdma10/               \
-             -I$(srctree)/drivers/misc/mediatek/video/common/color20/              \
              -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/             \
              -I$(srctree)/drivers/misc/mediatek/sync/                              \
              -I$(srctree)/drivers/misc/mediatek/m4u/$(MTK_PLATFORM)                \
@@ -64,8 +62,7 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/include/                  
              -I$(srctree)/drivers/misc/mediatek/base/power/include/                \
              -I$(srctree)/drivers/misc/mediatek/m4u/$(MTK_PLATFORM)/               \
              -I$(srctree)/drivers/misc/mediatek/include/mt-plat                    \
-             -I$(srctree)/drivers/misc/mediatek/mmp/                               \
-             -I$(srctree)/drivers/misc/mediatek/video/common/layering_rule_base/v1/
+             -I$(srctree)/drivers/misc/mediatek/mmp/
 
 ccflags-$(CONFIG_MTK_LCM) += -I$(srctree)/drivers/misc/mediatek/lcm/inc/
 

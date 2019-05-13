@@ -233,7 +233,8 @@ static CLK_BUF_SWCTRL_STATUS_T  clk_buf_swctrl[CLKBUF_NUM] = {
 #else
 	CLK_BUF_SW_ENABLE,
 	CLK_BUF_SW_DISABLE,
-	CLK_BUF_SW_ENABLE
+	CLK_BUF_SW_ENABLE,
+	CLK_BUF_SW_DISABLE
 #endif
 };
 
@@ -435,9 +436,6 @@ void clk_buf_set_by_flightmode(bool is_flightmode_on)
 
 bool clk_buf_ctrl(enum clk_buf_id id, bool onoff)
 {
-	printk("[1]%s: id=%d, onoff=%d, is_flightmode_on=%d,is_pmic_clkbuf=%d\n", __func__,
-		     id, onoff, g_is_flightmode_on,is_pmic_clkbuf);
-
 	if (is_pmic_clkbuf) {
 		mutex_lock(&clk_buf_ctrl_lock);
 
@@ -464,12 +462,16 @@ bool clk_buf_ctrl(enum clk_buf_id id, bool onoff)
 
 	if ((id == CLK_BUF_NFC) && (CLK_BUF3_STATUS == CLOCK_BUFFER_HW_CONTROL))
 		return false;
+
+	if ((id == CLK_BUF_AUDIO) && (CLK_BUF4_STATUS == CLOCK_BUFFER_HW_CONTROL))
+		return false;
+
 #if 0
 	/* for bring-up */
 	clk_buf_warn("clk_buf_ctrl is disabled for bring-up\n");
 	return false;
 #endif
-	clk_buf_warn("[2]%s: id=%d, onoff=%d, is_flightmode_on=%d\n", __func__,
+	clk_buf_dbg("%s: id=%d, onoff=%d, is_flightmode_on=%d\n", __func__,
 		     id, onoff, g_is_flightmode_on);
 
 	mutex_lock(&clk_buf_ctrl_lock);
@@ -483,7 +485,6 @@ bool clk_buf_ctrl(enum clk_buf_id id, bool onoff)
 
 	return true;
 }
-EXPORT_SYMBOL(clk_buf_ctrl);
 
 void clk_buf_get_swctrl_status(CLK_BUF_SWCTRL_STATUS_T *status)
 {

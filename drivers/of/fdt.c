@@ -381,9 +381,6 @@ static void __unflatten_device_tree(void *blob,
 
 	/* Allocate memory for the expanded device tree */
 	mem = dt_alloc(size + 4, __alignof__(struct device_node));
-	if (!mem)
-		return;
-
 	memset(mem, 0, size);
 
 	*(__be32 *)(mem + size) = cpu_to_be32(0xdeadbeef);
@@ -596,12 +593,9 @@ int __init of_scan_flat_dt(int (*it)(unsigned long node,
 	const char *pathp;
 	int offset, rc = 0, depth = -1;
 
-	if (!blob)
-		return 0;
-
-	for (offset = fdt_next_node(blob, -1, &depth);
-	     offset >= 0 && depth >= 0 && !rc;
-	     offset = fdt_next_node(blob, offset, &depth)) {
+        for (offset = fdt_next_node(blob, -1, &depth);
+             offset >= 0 && depth >= 0 && !rc;
+             offset = fdt_next_node(blob, offset, &depth)) {
 
 		pathp = fdt_get_name(blob, offset, NULL);
 		if (*pathp == '/')
@@ -976,6 +970,11 @@ void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
 {
 	const u64 phys_offset = __pa(PAGE_OFFSET);
 
+#ifdef CONFIG_CCI_KLOG
+        int ret = 0;
+#endif
+
+
 	if (!PAGE_ALIGNED(base)) {
 		size -= PAGE_SIZE - (base & ~PAGE_MASK);
 		base = PAGE_ALIGN(base);
@@ -1005,7 +1004,25 @@ void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
 		size -= phys_offset - base;
 		base = phys_offset;
 	}
+
+#ifdef CONFIG_CCI_KLOG
+	printk("%s():start=0x%llX, size=0x%llX\n", __func__, base, size);
+	if(base < (u64)CCI_KLOG_START_ADDR_PHYSICAL && base + size > (u64)CCI_KLOG_START_ADDR_PHYSICAL + (u64)CCI_KLOG_SIZE)
+	{
+		ret = memblock_add(base, (u64)CCI_KLOG_START_ADDR_PHYSICAL - base);
+		if(ret == 0)
+		{
+			ret = memblock_add((u64)CCI_KLOG_START_ADDR_PHYSICAL + (u64)CCI_KLOG_SIZE, base + size - (u64)CCI_KLOG_START_ADDR_PHYSICAL - (u64)CCI_KLOG_SIZE);
+		}
+	}
+	else
+	{
+		ret = memblock_add(base, size);
+	}
+#else // #ifdef CONFIG_CCI_KLOG
 	memblock_add(base, size);
+#endif // #ifdef CONFIG_CCI_KLOG
+
 }
 
 int __init __weak early_init_dt_reserve_memory_arch(phys_addr_t base,

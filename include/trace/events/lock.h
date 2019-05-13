@@ -15,24 +15,16 @@ TRACE_EVENT(mutex_contended,
 	TP_ARGS(lock, ip),
 
 	TP_STRUCT__entry(
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
-		__string(name, lock->dep_map.name)
-#endif
+		__string(name, lock->name)
 		__field(void *, lockdep_addr)
 	),
 
 	TP_fast_assign(
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
-		__assign_str(name, lock->dep_map.name);
-#endif
+		__assign_str(name, lock->name);
 		__entry->lockdep_addr = lock;
 	),
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
-	TP_printk("%p %s",  __entry->lockdep_addr, __get_str(name))
-#else
-	TP_printk("%p",  __entry->lockdep_addr)
-#endif
 
+	TP_printk("%p %s",  __entry->lockdep_addr, __get_str(name))
 );
 
 TRACE_EVENT(mutex_acquired,
@@ -42,23 +34,16 @@ TRACE_EVENT(mutex_acquired,
 	TP_ARGS(lock, ip),
 
 	TP_STRUCT__entry(
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
-		__string(name, lock->dep_map.name);
-#endif
+		__string(name, lock->name)
 		__field(void *, lockdep_addr)
 	),
 
 	TP_fast_assign(
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
-		__assign_str(name, lock->dep_map.name);
-#endif
+		__assign_str(name, lock->name);
 		__entry->lockdep_addr = lock;
 	),
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
+
 	TP_printk("%p %s",  __entry->lockdep_addr, __get_str(name))
-#else
-	TP_printk("%p",  __entry->lockdep_addr)
-#endif
 );
 #endif
 #ifdef CONFIG_LOCKDEP

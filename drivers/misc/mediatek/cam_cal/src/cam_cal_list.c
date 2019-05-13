@@ -36,15 +36,11 @@
 #endif
 
 
-#define MTK_MAX_CID_NUM 7
+#define MTK_MAX_CID_NUM 3
 unsigned int mtkCidList[MTK_MAX_CID_NUM] = {
-	0x010b00ff, /*Single MTK Format*/
-	0x020b00ff, /*Double MTK Format in One OTP/EEPRom - Legacy*/
-	0x030b00ff, /*Double MTK Format in One OTP/EEPRom*/
-	0x02030101, //[zp] jy imx230
-	0xff050601, //[zp] jk s5k3l8
-	0xff030649, //[cz] jk s5k3l8
-	0x0200210c, //[MaJian] yh s5k3l8
+	0x010b00ff,/*Single MTK Format*/
+	0x020b00ff,/*Double MTK Format in One OTP/EEPRom - Legacy*/
+	0x030b00ff /*Double MTK Format in One OTP/EEPRom*/
 };
 
 stCAM_CAL_FUNC_STRUCT g_camCalCMDFunc[] = {
@@ -66,22 +62,21 @@ stCAM_CAL_LIST_STRUCT g_camCalList[] = {
 	{S5K2X8_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
 	{IMX377_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
 
-	{IMX230_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},//zp jy imx230
-	{IMX258_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},/*Dream: main1*/
-	/*{IMX258_MONO_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},Dream: main2*/
+	{IMX258_SENSOR_ID, 0xA0, CMD_GT24C32A, cam_cal_check_mtk_cid},/*Dream: main1*/
+	{IMX258_LGIT_SENSOR_ID, 0xA0, CMD_GT24C32A, cam_cal_check_mtk_cid},/*Dream: main1*///leod add 1117
+	{IMX258_MONO_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},/*Dream: main2*/
+	{IMX219_SENSOR_ID, 0xA0, CMD_CAT24C16, cam_cal_check_mtk_cid},/*Dream: sub1*/
+	{IMX219_TRULY_SENSOR_ID, 0xA0, CMD_CAT24C16, cam_cal_check_mtk_cid},/*Dream: sub1*///leod add 1117
 	/*{OV8865_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},Dream: sub1 for 4cam*/
 	/*{S5K5E8YX_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},Dream: sub2 for 4cam*/
 
 	{S5K5E2YA_SENSOR_ID, 0x00, CMD_MAIN, cam_cal_check_double_eeprom},
 
-	/*{IMX338_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},O main */
+	{IMX338_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},/*O main */
 	{OV8858_SENSOR_ID, 0xA8, CMD_AUTO, cam_cal_check_mtk_cid},/*O sub */
 
 	{S5K2P8_SENSOR_ID, 0xA2, CMD_AUTO, cam_cal_check_mtk_cid},/*J main */
-	{S5K3P3SX_SENSOR_ID, 0xA0 , CMD_AUTO, cam_cal_uncheck_mtk_id},
 	{OV8858_SENSOR_ID, 0xA2, CMD_AUTO, cam_cal_check_mtk_cid},/*J sub */
-	{S5K3L8_SENSOR_ID, 0xB0, CMD_AUTO, cam_cal_uncheck_mtk_id},
-	{S5K3L8_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_uncheck_mtk_id},
 
 	/*  ADD before this line */
 	{0, 0, CMD_NONE, 0} /*end of list*/
@@ -107,27 +102,20 @@ unsigned int cam_cal_get_func_list(stCAM_CAL_FUNC_STRUCT **ppCamcalFuncList)
 	return 0;
 }
 
-unsigned int cam_cal_uncheck_mtk_id(struct i2c_client *client, cam_cal_cmd_func readCamCalData)
-{
-	//do not check id
-	return 1;
-}
-
 unsigned int cam_cal_check_mtk_cid(struct i2c_client *client, cam_cal_cmd_func readCamCalData)
 {
 	unsigned int calibrationID = 0, ret = 0;
 	int j = 0;
 
 	if (readCamCalData != NULL) {
-#ifdef JY_IMX230_OTP
-		{
-			readCamCalData(client, 4, (unsigned char *)&calibrationID, 4);
-			printk("ok! The imgsensor is imx230!\n");
-		}
-#else
 		readCamCalData(client, 1, (unsigned char *)&calibrationID, 4);
-#endif
 		CAM_CALDB("calibrationID = %x\n", calibrationID);
+	}
+
+	if(calibrationID == 0x0102000f)
+	{
+		calibrationID = 0x010b00ff;
+		CAM_CALDB("Convert calibrationID to 0x%x", calibrationID);
 	}
 
 	if (calibrationID != 0)
@@ -161,4 +149,6 @@ unsigned int cam_cal_check_double_eeprom(struct i2c_client *client, cam_cal_cmd_
 	CAM_CALDB("ret=%d\n", ret);
 	return ret;
 }
+
+
 

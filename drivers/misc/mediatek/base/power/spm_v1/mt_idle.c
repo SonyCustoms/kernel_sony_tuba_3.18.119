@@ -92,40 +92,12 @@ enum {
 };
 #endif
 
-#if defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
-static atomic_t is_in_hotplug = ATOMIC_INIT(0);
-#endif
-
-
-#ifdef CONFIG_FPGA_EARLY_PORTING
-#undef EN_PTP_OD
-#define EN_PTP_OD 0
-
-bool __attribute__((weak)) clkmgr_idle_can_enter(unsigned int *condition_mask, unsigned int *block_mask)
-{
-	return false;
-}
-unsigned int __attribute__((weak)) clk_id_to_grp_id(unsigned int id)
-{
-	return 0;
-}
-unsigned int __attribute__((weak)) clk_id_to_mask(unsigned int id)
-{
-	return 0;
-}
-void __attribute__((weak)) clkmgr_faudintbus_pll2sq(void)
-{
-}
-void __attribute__((weak)) clkmgr_faudintbus_sq2pll(void)
-{
-}
-#endif
-
 static unsigned long rgidle_cnt[NR_CPUS] = {0};
 static bool mt_idle_chk_golden;
 static bool mt_dpidle_chk_golden;
 
 #define INVALID_GRP_ID(grp) (grp < 0 || grp >= NR_GRPS)
+
 
 void __attribute__((weak)) bus_dcm_enable(void)
 {
@@ -328,7 +300,6 @@ enum {
 	BY_TMR,
 	BY_OTH,
 	BY_VTG,
-	BY_FRM,
 	NR_REASONS
 };
 
@@ -336,7 +307,11 @@ enum {
 /* Idle handler on/off */
 static int idle_switch[NR_TYPES] = {
 	1,  /* dpidle switch */
+#if defined(CONFIG_MTK_DISABLE_SODI)
 	0,  /* soidle switch */
+#else
+	1,  /* soidle switch */
+#endif
 	1,  /* slidle switch */
 	1,  /* rgidle switch */
 };
@@ -383,7 +358,11 @@ static unsigned int slidle_condition_mask[NR_GRPS] = {
 /* Idle handler on/off */
 static int idle_switch[NR_TYPES] = {
 	1,  /* dpidle switch */
+#if defined(CONFIG_MTK_DISABLE_SODI)
 	0,  /* soidle switch */
+#else
+	1,  /* soidle switch */
+#endif
 	1,  /* slidle switch */
 	1,  /* rgidle switch */
 };
@@ -429,7 +408,11 @@ static unsigned int slidle_condition_mask[NR_GRPS] = {
 #elif defined(CONFIG_ARCH_MT6753)
 static int idle_switch[NR_TYPES] = {
 	1,  /* dpidle switch */
+#if defined(CONFIG_MTK_DISABLE_SODI)
 	0,  /* soidle switch */
+#else
+	1,  /* soidle switch */
+#endif
 	1,  /* slidle switch */
 	1,  /* rgidle switch */
 };
@@ -472,63 +455,7 @@ static unsigned int slidle_condition_mask[NR_GRPS] = {
 	0x00000000, /* VDEC1: */
 	0x00000000, /* VENC: */
 };
-#elif defined(CONFIG_ARCH_MT6570)
-/*Idle handler on/off*/
-static int idle_switch[NR_TYPES] = {
-	1,  /* dpidle switch */
-	1,  /* soidle switch */
-	0,  /* slidle switch */
-	1,  /* rgidle switch */
-};
-
-static unsigned int dpidle_condition_mask[NR_GRPS] = {
-	0x00000000, /* CG_MIXED: */
-	0x00000000, /* CG_MPLL: */
-	0x00000000, /* CG_UPLL: */
-	0x00000037, /* CG_CTRL0: */
-	0x8089B2FC, /* CG_CTRL1: */
-	0x00003F16, /* CG_CTRL2: */
-	0x0007EFFF, /* CG_MMSYS0: */
-	0x0000000C, /* CG_MMSYS1: */
-	0x000003E1, /* CG_IMGSYS: */
-	0x00000001, /* CG_MFGSYS: */
-	0x00000000, /* CG_AUDIO: */
-	0x00000000, /* CG_INFRA_AO: */
-	0x00000006, /* CG_CTRL3: */
-};
-
-static unsigned int soidle_condition_mask[NR_GRPS] = {
-	0x00000000, /* CG_MIXED: */
-	0x00000000, /* CG_MPLL: */
-	0x00000000, /* CG_UPLL: */
-	0x00000026, /* CG_CTRL0: */
-	0x8089B2F8, /* CG_CTRL1: */
-	0x00003F06, /* CG_CTRL2: */
-	0x00000200, /* CG_MMSYS0: */
-	0x00000000, /* CG_MMSYS1: */
-	0x000003E1, /* CG_IMGSYS: */
-	0x00000001, /* CG_MFGSYS: */
-	0x00000000, /* CG_AUDIO: */
-	0x00000000, /* CG_INFRA_AO: */
-	0x00000000, /* CG_CTRL3: */
-};
-
-static unsigned int slidle_condition_mask[NR_GRPS] = {
-	0xFFFFFFFF, /* CG_MIXED: */
-	0xFFFFFFFF, /* CG_MPLL: */
-	0xFFFFFFFF, /* CG_UPLL: */
-	0xFFFFFFFF, /* CG_CTRL0: */
-	0xFFFFFFFF, /* CG_CTRL1: */
-	0xFFFFFFFF, /* CG_CTRL2: */
-	0xFFFFFFFF, /* CG_MMSYS0: */
-	0xFFFFFFFF, /* CG_MMSYS1: */
-	0xFFFFFFFF, /* CG_IMGSYS: */
-	0xFFFFFFFF, /* CG_MFGSYS: */
-	0xFFFFFFFF, /* CG_AUDIO: */
-	0xFFFFFFFF, /* CG_INFRA_AO: */
-	0xFFFFFFFF, /* CG_CTRL3: */
-};
-#elif defined(CONFIG_ARCH_MT6580)
+#elif defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
 /*Idle handler on/off*/
 static int idle_switch[NR_TYPES] = {
 	1,  /* dpidle switch */
@@ -595,7 +522,6 @@ static const char *reason_name[NR_REASONS] = {
 	"by_tmr",
 	"by_oth",
 	"by_vtg",
-	"by_frm",
 };
 
 char cg_group_name[][NR_GRPS] = {
@@ -659,7 +585,6 @@ static unsigned long    soidle_block_cnt[NR_CPUS][NR_REASONS] = { {0} };
 static unsigned long long soidle_block_prev_time;
 static bool             soidle_by_pass_cg;
 static bool             soidle_by_pass_pg;
-static int				sodi_by_uptime_count;
 
 /* DeepIdle */
 static unsigned int     dpidle_block_mask[NR_GRPS] = {0x0};
@@ -944,7 +869,7 @@ static void __init iomap_init(void)
 #endif
 	get_base_from_node(cksys_ids, &cksys_base, 0, "cksys");
 }
-#endif /* !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580) */
+#endif /*!defined(CONFIG_ARCH_MT6580)*/
 
 const char *cg_grp_get_name(int id)
 {
@@ -1003,23 +928,11 @@ void idle_unlock_spm(enum idle_lock_spm_id id)
 	spin_unlock_irqrestore(&idle_spm_spin_lock, flags);
 }
 
-#if defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
-static bool mt_idle_cpu_criteria(void)
-{
-	return ((atomic_read(&is_in_hotplug) == 1) || (num_online_cpus() != 1)) ? false : true;
-}
-#else
-static bool mt_idle_cpu_criteria(void)
-{
-	return (spm_get_cpu_pwr_status() == CA7_CPU0) ? true : false;
-}
-#endif
-
 /*
  * SODI part
  */
 static DEFINE_MUTEX(soidle_locked);
-#if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
+#if !defined(CONFIG_ARCH_MT6580)
 static void enable_soidle_by_mask(int grp, unsigned int mask)
 {
 	mutex_lock(&soidle_locked);
@@ -1036,7 +949,7 @@ static void disable_soidle_by_mask(int grp, unsigned int mask)
 #endif
 void enable_soidle_by_bit(int id)
 {
-#if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
+#if !defined(CONFIG_ARCH_MT6580)
 	int grp = id / 32;
 	unsigned int mask = 1U << (id % 32);
 
@@ -1056,7 +969,7 @@ EXPORT_SYMBOL(enable_soidle_by_bit);
 
 void disable_soidle_by_bit(int id)
 {
-#if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
+#if !defined(CONFIG_ARCH_MT6580)
 	int grp = id / 32;
 	unsigned int mask = 1U << (id % 32);
 
@@ -1092,15 +1005,8 @@ static bool soidle_can_enter(int cpu)
 	bool retval = false;
 	char *p;
 
-#if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
-	if (!spm_load_firmware_status()) {
-		reason = BY_FRM;
-		goto out;
-	}
-#endif
-
 #ifdef CONFIG_SMP
-	if (!mt_idle_cpu_criteria()) {
+	if (!(spm_get_cpu_pwr_status() == CA7_CPU0)) {
 		reason = BY_CPU;
 		goto out;
 	}
@@ -1151,27 +1057,6 @@ static bool soidle_can_enter(int cpu)
 		goto out;
 	}
 #endif
-
-	if (sodi_by_uptime_count != -1) {
-		struct timespec uptime;
-		unsigned long val;
-
-		get_monotonic_boottime(&uptime);
-		val = (unsigned long)uptime.tv_sec;
-		if (val <= 90) {
-			sodi_by_uptime_count++;
-			reason = BY_OTH;
-			goto out;
-		} else {
-			idle_warn("SODI: blocking by uptime count = %d\n", sodi_by_uptime_count);
-			sodi_by_uptime_count = -1;
-		}
-	}
-
-	if (sodi_forbid_by_prev_wakeup_info()) {
-		reason = BY_OTH;
-		goto out;
-	}
 
 out:
 	if (reason < NR_REASONS) {
@@ -1266,7 +1151,7 @@ void soidle_after_wfi(int cpu)
  * deep idle part
  */
 static DEFINE_MUTEX(dpidle_locked);
-#if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
+#if !defined(CONFIG_ARCH_MT6580)
 static void enable_dpidle_by_mask(int grp, unsigned int mask)
 {
 	mutex_lock(&dpidle_locked);
@@ -1283,7 +1168,7 @@ static void disable_dpidle_by_mask(int grp, unsigned int mask)
 #endif
 void enable_dpidle_by_bit(int id)
 {
-#if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
+#if !defined(CONFIG_ARCH_MT6580)
 	int grp = id / 32;
 	unsigned int mask = 1U << (id % 32);
 
@@ -1303,7 +1188,7 @@ EXPORT_SYMBOL(enable_dpidle_by_bit);
 
 void disable_dpidle_by_bit(int id)
 {
-#if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
+#if !defined(CONFIG_ARCH_MT6580)
 	int grp = id / 32;
 	unsigned int mask = 1U << (id % 32);
 
@@ -1329,15 +1214,8 @@ static bool dpidle_can_enter(void)
 	bool retval = false;
 	char *p;
 
-#if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
-	if (!spm_load_firmware_status()) {
-		reason = BY_FRM;
-		goto out;
-	}
-#endif
-
 #ifdef CONFIG_SMP
-	if (!mt_idle_cpu_criteria()) {
+	if (!(spm_get_cpu_pwr_status() == CA7_CPU0)) {
 		reason = BY_CPU;
 		goto out;
 	}
@@ -1531,7 +1409,7 @@ static bool slidle_can_enter(void)
 {
 	int reason = NR_REASONS;
 
-	if (!mt_idle_cpu_criteria()) {
+	if (!(spm_get_cpu_pwr_status() == CA7_CPU0)) {
 		reason = BY_CPU;
 		goto out;
 	}
@@ -1866,7 +1744,7 @@ EXPORT_SYMBOL(mt_idle_select);
 
 int dpidle_enter(int cpu)
 {
-	int ret = IDLE_TYPE_DP;
+	int ret = 1;
 
 	idle_ratio_calc_start(IDLE_TYPE_DP, cpu);
 
@@ -1898,7 +1776,7 @@ EXPORT_SYMBOL(dpidle_enter);
 
 int soidle_enter(int cpu)
 {
-	int ret = IDLE_TYPE_SO;
+	int ret = 1;
 
 	idle_ratio_calc_start(IDLE_TYPE_SO, cpu);
 
@@ -1914,7 +1792,7 @@ EXPORT_SYMBOL(soidle_enter);
 
 int slidle_enter(int cpu)
 {
-	int ret = IDLE_TYPE_SL;
+	int ret = 1;
 
 	idle_ratio_calc_start(IDLE_TYPE_SL, cpu);
 
@@ -1928,7 +1806,7 @@ EXPORT_SYMBOL(slidle_enter);
 
 int rgidle_enter(int cpu)
 {
-	int ret = IDLE_TYPE_RG;
+	int ret = 1;
 
 	idle_ratio_calc_start(IDLE_TYPE_RG, cpu);
 
@@ -1973,12 +1851,6 @@ static ssize_t idle_state_read(struct file *filp,
 	char *p = dbg_buf;
 	int i;
 
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
-
 	p += sprintf(p, "********** idle state dump **********\n");
 
 	for (i = 0; i < nr_cpu_ids; i++) {
@@ -2006,9 +1878,6 @@ static ssize_t idle_state_read(struct file *filp,
 
 	len = p - dbg_buf;
 
-	if ((count - *f_pos) < len)
-		return 0;
-
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
 
@@ -2020,9 +1889,6 @@ static ssize_t idle_state_write(struct file *filp,
 	char cmd[32];
 	int idx;
 	int param;
-
-	if (!userbuf)
-		return -EFAULT;
 
 	count = min(count, sizeof(cmd_buf) - 1);
 
@@ -2076,12 +1942,6 @@ static ssize_t dpidle_state_read(struct file *filp, char __user *userbuf, size_t
 	char *p = dbg_buf;
 	int i;
 
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
-
 	p += sprintf(p, "*********** deep idle state ************\n");
 	p += sprintf(p, "dpidle_time_critera=%u\n", dpidle_time_critera);
 
@@ -2114,9 +1974,6 @@ static ssize_t dpidle_state_read(struct file *filp, char __user *userbuf, size_t
 
 	len = p - dbg_buf;
 
-	if ((count - *f_pos) < len)
-		return 0;
-
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
 
@@ -2127,9 +1984,6 @@ static ssize_t dpidle_state_write(struct file *filp,
 {
 	char cmd[32];
 	int param;
-
-	if (!userbuf)
-		return -EFAULT;
 
 	count = min(count, sizeof(cmd_buf) - 1);
 
@@ -2191,12 +2045,6 @@ static ssize_t soidle_state_read(struct file *filp, char __user *userbuf, size_t
 	char *p = dbg_buf;
 	int i;
 
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
-
 	p += sprintf(p, "*********** deep idle state ************\n");
 	p += sprintf(p, "soidle_time_critera=%u\n", soidle_time_critera);
 
@@ -2227,9 +2075,6 @@ static ssize_t soidle_state_read(struct file *filp, char __user *userbuf, size_t
 
 	len = p - dbg_buf;
 
-	if ((count - *f_pos) < len)
-		return 0;
-
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
 
@@ -2240,9 +2085,6 @@ static ssize_t soidle_state_write(struct file *filp,
 {
 	char cmd[32];
 	int param;
-
-	if (!userbuf)
-		return -EFAULT;
 
 	count = min(count, sizeof(cmd_buf) - 1);
 
@@ -2303,12 +2145,6 @@ static ssize_t slidle_state_read(struct file *filp, char __user *userbuf, size_t
 	char *p = dbg_buf;
 	int i;
 
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
-
 	p += sprintf(p, "*********** slow idle state ************\n");
 	for (i = 0; i < NR_REASONS; i++) {
 		p += sprintf(p, "[%d]slidle_block_cnt[%s]=%lu\n",
@@ -2329,22 +2165,14 @@ static ssize_t slidle_state_read(struct file *filp, char __user *userbuf, size_t
 
 	len = p - dbg_buf;
 
-	if ((count - *f_pos) < len)
-		return 0;
-
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
 
-static ssize_t slidle_state_write(struct file *filp,
-									const char __user *userbuf,
-									size_t count,
-									loff_t *f_pos)
+static ssize_t slidle_state_write(struct file *filp, const char __user *userbuf,
+									size_t count, loff_t *f_pos)
 {
 	char cmd[32];
 	int param;
-
-	if (!userbuf)
-		return -EFAULT;
 
 	count = min(count, sizeof(cmd_buf) - 1);
 
@@ -2353,7 +2181,7 @@ static ssize_t slidle_state_write(struct file *filp,
 
 	cmd_buf[count] = '\0';
 
-	if (sscanf(cmd_buf, "%31s %d", cmd, &param) == 2) {
+	if (sscanf(userbuf, "%31s %d", cmd, &param) == 2) {
 		if (!strcmp(cmd, "slidle"))
 			idle_switch[IDLE_TYPE_SL] = param;
 		else if (!strcmp(cmd, "enable"))
@@ -2380,47 +2208,6 @@ static const struct file_operations slidle_state_fops = {
 
 static struct dentry *root_entry;
 
-#if defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
-/* CPU hotplug notifier, for informing whether CPU hotplug is working */
-static int mt_idle_cpu_callback(struct notifier_block *nfb,
-				   unsigned long action, void *hcpu)
-{
-	switch (action) {
-	case CPU_UP_PREPARE:
-	case CPU_UP_PREPARE_FROZEN:
-	case CPU_DOWN_PREPARE:
-	case CPU_DOWN_PREPARE_FROZEN:
-		atomic_inc(&is_in_hotplug);
-		break;
-
-	case CPU_ONLINE:
-	case CPU_ONLINE_FROZEN:
-	case CPU_UP_CANCELED:
-	case CPU_UP_CANCELED_FROZEN:
-	case CPU_DOWN_FAILED:
-	case CPU_DOWN_FAILED_FROZEN:
-	case CPU_DEAD:
-	case CPU_DEAD_FROZEN:
-		atomic_dec(&is_in_hotplug);
-		break;
-	}
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block mt_idle_cpu_notifier = {
-	.notifier_call = mt_idle_cpu_callback,
-	.priority   = INT_MAX,
-};
-
-static int mt_idle_hotplug_cb_init(void)
-{
-	register_cpu_notifier(&mt_idle_cpu_notifier);
-
-	return 0;
-}
-#endif
-
 static int mt_cpuidle_debugfs_init(void)
 {
 	/* Initialize debugfs */
@@ -2439,7 +2226,7 @@ static int mt_cpuidle_debugfs_init(void)
 	return 0;
 }
 
-void __init mt_cpuidle_framework_init(void)
+void mt_cpuidle_framework_init(void)
 {
 	int err = 0;
 #if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
@@ -2467,10 +2254,6 @@ void __init mt_cpuidle_framework_init(void)
 
 #if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
 	iomap_init();
-#endif
-
-#if defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
-	mt_idle_hotplug_cb_init();
 #endif
 
 	mt_cpuidle_debugfs_init();

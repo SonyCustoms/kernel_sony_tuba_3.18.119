@@ -36,9 +36,9 @@ static DEFINE_MUTEX(gCmdqSecContextLock);	/* lock to protext atomic access gCmdq
 static struct list_head gCmdqSecContextList;	/* secure context list. note each porcess has its own sec context */
 static cmdqSecContextHandle gCmdqSecContextHandle;	/* secure context to cmdqSecTL */
 static KREE_SHAREDMEM_HANDLE gCmdq_share_cookie_handle;
-static uint32_t gSubmitTaskCount;
 #endif
 static uint32_t gSecPrintCount;
+static uint32_t gSubmitTaskCount;
 
 /*
 ** for CMDQ_LOG_LEVEL
@@ -315,7 +315,7 @@ static int32_t cmdq_sec_fill_iwc_command_msg_unlocked(iwcCmdqMessage_t *pIwc,
 		pIwc->command.thread = thread;
 		pIwc->command.priority = pTask->priority;
 		pIwc->command.engineFlag = pTask->engineFlag;
-		pIwc->command.hNormalTask = (0LL | (unsigned long) (pTask));
+		pIwc->command.hNormalTask = (0LL | (uint64_t) (pTask));
 		pIwc->command.commandSize = pTask->bufferSize;
 
 		buffer_index = 0;

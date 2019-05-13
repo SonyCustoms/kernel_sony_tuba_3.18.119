@@ -1,15 +1,12 @@
-/*
- * Copyright (C) 2015 MediaTek Inc.
+/******************************************************************************
+ * mt_gpio_debug.c - MTKLinux GPIO Device Driver
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Copyright 2008-2009 MediaTek Co.,Ltd.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- */
+ * DESCRIPTION:
+ *     This file provid the other drivers GPIO debug functions
+ *
+ ******************************************************************************/
 
 #include <linux/slab.h>
 /*#ifndef CONFIG_OF
@@ -88,10 +85,8 @@ void mt_gpio_load_base(GPIO_REGS *regs)
 	GPIO_REGS *pReg = (GPIO_REGS *) (GPIO_BASE);
 	int idx;
 
-	if (!regs) {
+	if (!regs)
 		GPIOERR("%s: null pointer\n", __func__);
-		return;
-	}
 	memset(regs, 0x00, sizeof(*regs));
 	for (idx = 0; idx < sizeof(pReg->dir) / sizeof(pReg->dir[0]); idx++)
 		regs->dir[idx].val = __raw_readl(&pReg->dir[idx]);

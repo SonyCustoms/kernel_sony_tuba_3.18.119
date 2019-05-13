@@ -32,8 +32,6 @@
 /* #include <linux/aee.h> */
 #endif
 
-#include <ddp_gamma.h>
-
 #include <mt-plat/mt_pwm.h>
 #include <mt-plat/upmu_common.h>
 #include <mach/upmu_hw.h>
@@ -84,6 +82,7 @@ static int button_flag_isink0;
 static int button_flag_isink1;
 static int button_flag_isink2;
 static int button_flag_isink3;
+extern int get_lcm_id(void);
 
 struct wake_lock leds_suspend_lock;
 
@@ -96,6 +95,26 @@ char *leds_name[MT65XX_LED_TYPE_TOTAL] = {
 	"button-backlight",
 	"lcd-backlight",
 };
+//Mark add for INX sec source
+static int backlight_change[255] = {
+	3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 21, 21, 21, 22, 22, 22, 23, 23, 23, 24, 24, 24, 24, 24, 24, 24, 25, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 27, 28,
+	28, 28, 28, 28, 28, 28, 28, 28, 29, 29, 29, 29, 29, 30, 30, 30, 30, 30, 30, 32, 32, 32, 32, 32, 32, 32, 33, 33, 33, 34, 34, 34, 35, 35, 35, 35, 35, 36, 36, 36, 
+	37, 37, 38, 38, 38, 38, 38, 39, 39, 39, 40, 40, 41, 41, 41, 41, 41, 42, 42, 42, 42, 43, 44, 44, 44, 44, 44, 45, 45, 45, 46, 46, 48, 48, 49, 49, 50, 51, 51, 52, 
+	52, 53, 55, 55, 56, 56, 57, 57, 58, 59, 59, 60, 60, 62, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 83, 84, 85, 86, 87, 88, 
+	88, 89, 90, 91, 92, 94, 95, 96, 97, 98, 99, 100, 102, 103, 104, 106, 107, 109, 110, 111, 112, 113, 115, 116, 117, 118, 120, 122, 123, 124, 125, 127, 128, 129, 131, 132, 134, 136, 137, 139, 
+	140, 141, 143, 144, 145, 147, 148, 150, 152, 153, 155, 157, 158, 160, 162, 164, 165, 168, 170, 172, 173, 175, 177, 179, 180, 182, 184, 186, 188, 190, 192, 194, 196, 198, 
+	199, 201, 203, 205, 207, 210, 212, 214, 215, 217, 219, 221, 223, 225, 227, 230, 231, 233, 235, 237, 239	
+	};
+//Mark add for mapping M4 aqua backlight curve
+static int backlight_change_truly[255] = {
+	2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 20, 20, 20, 21, 21, 21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 24,
+	24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 25, 25, 25, 25, 25, 25, 26, 26, 26, 26, 26, 26, 26, 27, 27, 27, 27, 27, 27, 28, 28, 28, 28, 28, 29, 29, 29,
+	29, 29, 30, 30, 30, 30, 30, 31, 31, 31, 31, 31, 32, 32, 32, 32, 32, 33, 33, 33, 33, 33, 34, 34, 34, 34, 34, 35, 35, 35, 36, 36, 37, 37, 38, 38, 39, 40, 40, 41,
+	41, 42, 43, 43, 44, 44, 45, 45, 46, 47, 47, 48, 48, 49, 49, 50, 51, 52, 53, 54, 55, 56, 57, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73,
+	73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 86, 87, 88, 89, 90, 92, 93, 94, 95, 96, 98, 99, 100, 101, 102, 104, 105, 106, 107, 109, 110, 111, 113, 114, 115, 117, 118, 120,
+	121, 122, 124, 125, 126, 128, 129, 130, 132, 133, 135, 137, 138, 140, 142, 144, 145, 147, 149, 151, 152, 154, 156, 158, 159, 161, 163, 165, 166, 168, 170, 172, 174, 176,
+	177, 179, 181, 183, 185, 187, 189, 191, 192, 194, 196, 198, 200, 202, 204, 206, 207, 209, 211, 213, 215
+	};
 
 struct cust_mt65xx_led *pled_dtsi = NULL;
 /****************************************************************************
@@ -574,10 +593,16 @@ int mt_led_blink_pmic(enum mt65xx_led_pmic pmic_type, struct nled_setting *led)
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_ISINK0_CK_PDN, 0);
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_ISINK0_CK_CKSEL, 0);
 		pmic_set_register_value(MT6351_PMIC_ISINK_CH0_MODE, ISINK_PWM_MODE);
-		pmic_set_register_value(MT6351_PMIC_ISINK_CH0_STEP, ISINK_3);	/* 16mA */
+		//pmic_set_register_value(MT6351_PMIC_ISINK_CH0_STEP, ISINK_3);	/* 16mA */
+		//pmic_set_register_value(MT6351_PMIC_ISINK_DIM0_DUTY, duty);
+		//pmic_set_register_value(MT6351_PMIC_ISINK_DIM0_FSEL,
+		//			pmic_freqsel_array[time_index]);
+		//CEI comments start
+        	
+		pmic_set_register_value(MT6351_PMIC_ISINK_CH0_STEP, led->blink_level); /* 16mA */
 		pmic_set_register_value(MT6351_PMIC_ISINK_DIM0_DUTY, duty);
-		pmic_set_register_value(MT6351_PMIC_ISINK_DIM0_FSEL,
-					pmic_freqsel_array[time_index]);
+		pmic_set_register_value(MT6351_PMIC_ISINK_DIM0_FSEL, led->blink_off_time+led->blink_on_time-1);
+        	//CEI comments end
 		pmic_set_register_value(MT6351_PMIC_ISINK_CH0_EN, NLED_ON);
 		#endif
 		break;
@@ -594,10 +619,15 @@ int mt_led_blink_pmic(enum mt65xx_led_pmic pmic_type, struct nled_setting *led)
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_ISINK1_CK_PDN, 0);
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_ISINK1_CK_CKSEL, 0);
 		pmic_set_register_value(MT6351_PMIC_ISINK_CH1_MODE, ISINK_PWM_MODE);
-		pmic_set_register_value(MT6351_PMIC_ISINK_CH1_STEP, ISINK_3);	/* 16mA */
+		//pmic_set_register_value(MT6351_PMIC_ISINK_CH1_STEP, ISINK_3);   /* 16mA */
+		//pmic_set_register_value(MT6351_PMIC_ISINK_DIM1_DUTY, duty);
+		//pmic_set_register_value(MT6351_PMIC_ISINK_DIM1_FSEL,
+		//                        pmic_freqsel_array[time_index]);
+		
+		pmic_set_register_value(MT6351_PMIC_ISINK_CH1_STEP, led->blink_level);	/* 16mA */
 		pmic_set_register_value(MT6351_PMIC_ISINK_DIM1_DUTY, duty);
-		pmic_set_register_value(MT6351_PMIC_ISINK_DIM1_FSEL,
-					pmic_freqsel_array[time_index]);
+		pmic_set_register_value(MT6351_PMIC_ISINK_DIM1_FSEL, led->blink_off_time+led->blink_on_time-1);
+		//CEI comments end
 		pmic_set_register_value(MT6351_PMIC_ISINK_CH1_EN, NLED_ON);
 		#endif
 		break;
@@ -610,10 +640,15 @@ int mt_led_blink_pmic(enum mt65xx_led_pmic pmic_type, struct nled_setting *led)
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_ISINK4_CK_PDN, 0);
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_ISINK4_CK_CKSEL, 0);
 		pmic_set_register_value(MT6351_PMIC_ISINK_CH4_MODE, ISINK_PWM_MODE);
-		pmic_set_register_value(MT6351_PMIC_ISINK_CH4_STEP, ISINK_3);	/* 16mA */
+		//pmic_set_register_value(MT6351_PMIC_ISINK_CH4_STEP, ISINK_3);	/* 16mA */
+		//pmic_set_register_value(MT6351_PMIC_ISINK_DIM4_DUTY, duty);
+		//pmic_set_register_value(MT6351_PMIC_ISINK_DIM4_FSEL,
+		//			pmic_freqsel_array[time_index]);
+		
+		pmic_set_register_value(MT6351_PMIC_ISINK_CH4_STEP, led->blink_level); /* 16mA */
 		pmic_set_register_value(MT6351_PMIC_ISINK_DIM4_DUTY, duty);
-		pmic_set_register_value(MT6351_PMIC_ISINK_DIM4_FSEL,
-					pmic_freqsel_array[time_index]);
+		pmic_set_register_value(MT6351_PMIC_ISINK_DIM4_FSEL, led->blink_off_time+led->blink_on_time-1);
+		//CEI comments end
 		pmic_set_register_value(MT6351_PMIC_ISINK_CH4_EN, NLED_ON);
 		#endif
 		break;
@@ -789,8 +824,11 @@ unsigned int mt_show_pwm_register(unsigned int addr)
 int mt_brightness_set_pmic(enum mt65xx_led_pmic pmic_type, u32 level, u32 div)
 {
 	static bool first_time = true;
-#if 0
+    //CEI comments start
+    
 	int tmp_level = level;
+    //CEI comments end
+#if 0
 	static bool backlight_init_flag;
 	static unsigned char duty_mapping[PMIC_BACKLIGHT_LEVEL] = {
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
@@ -812,6 +850,21 @@ int mt_brightness_set_pmic(enum mt65xx_led_pmic pmic_type, u32 level, u32 div)
 	};
 #endif
 	LEDS_DEBUG("PMIC#%d:%d\n", pmic_type, level);
+	//CEI comments start
+    
+    if (level > 0 && level < 43)
+		tmp_level = 0;
+	else if (level >= 43 && level <= 85)
+		tmp_level = 1;
+	else if (level > 85 && level < 128)
+		tmp_level = 2;
+	else if (level >= 128 && level <= 170)
+		tmp_level = 3;
+	else if (level > 170 && level < 213)
+		tmp_level = 4;
+	else if (level >= 213)
+		tmp_level = 5;
+    //CEI comments end
 	mutex_lock(&leds_pmic_mutex);
 	if (pmic_type == MT65XX_LED_PMIC_LCD_ISINK) {
 #if 0
@@ -968,9 +1021,11 @@ int mt_brightness_set_pmic(enum mt65xx_led_pmic pmic_type, u32 level, u32 div)
 		pmic_set_register_value(PMIC_CLK_DRV_32K_CK_PDN, 0x0);	/* Disable power down */
 		pmic_set_register_value(PMIC_CLK_DRV_ISINK0_CK_PDN, 0);
 		pmic_set_register_value(PMIC_ISINK_CH0_MODE, ISINK_PWM_MODE);
-		pmic_set_register_value(PMIC_ISINK_CH0_STEP, ISINK_3);	/* 16mA */
-		pmic_set_register_value(PMIC_ISINK_DIM0_DUTY, 15);
-		pmic_set_register_value(PMIC_ISINK_DIM0_FSEL, ISINK_1KHZ);
+        //CEI comments start
+        
+		//pmic_set_register_value(PMIC_ISINK_CH0_STEP, ISINK_3);	/* 16mA */
+		//pmic_set_register_value(PMIC_ISINK_DIM0_DUTY, 15);
+		//pmic_set_register_value(PMIC_ISINK_DIM0_FSEL, ISINK_1KHZ);	/* 1KHz */
 		#else
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_32K_CK_PDN, 0x0);	/* Disable power down */
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_ISINK0_CK_PDN, 0);
@@ -981,6 +1036,10 @@ int mt_brightness_set_pmic(enum mt65xx_led_pmic pmic_type, u32 level, u32 div)
 		pmic_set_register_value(MT6351_PMIC_ISINK_DIM0_FSEL, ISINK_1KHZ);	/* 1KHz */
 		#endif
 		if (level) {
+            pmic_set_register_value(PMIC_ISINK_CH0_STEP, tmp_level);
+            pmic_set_register_value(PMIC_ISINK_DIM0_DUTY, 15);
+            pmic_set_register_value(PMIC_ISINK_DIM0_FSEL, ISINK_1KHZ);	/* 1KHz */
+//CEI comments end
 			#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
 			pmic_set_register_value(PMIC_ISINK_CH0_EN, NLED_ON);
 			#else
@@ -1029,9 +1088,11 @@ int mt_brightness_set_pmic(enum mt65xx_led_pmic pmic_type, u32 level, u32 div)
 		pmic_set_register_value(PMIC_CLK_DRV_32K_CK_PDN, 0x0);	/* Disable power down */
 		pmic_set_register_value(PMIC_CLK_DRV_ISINK1_CK_PDN, 0);
 		pmic_set_register_value(PMIC_ISINK_CH1_MODE, ISINK_PWM_MODE);
-		pmic_set_register_value(PMIC_ISINK_CH1_STEP, ISINK_3);	/* 16mA */
-		pmic_set_register_value(PMIC_ISINK_DIM1_DUTY, 15);
-		pmic_set_register_value(PMIC_ISINK_DIM1_FSEL, ISINK_1KHZ);
+        //CEI comments start
+        
+		//pmic_set_register_value(PMIC_ISINK_CH1_STEP, ISINK_3);	/* 16mA */
+		//pmic_set_register_value(PMIC_ISINK_DIM1_DUTY, 15);
+		//pmic_set_register_value(PMIC_ISINK_DIM1_FSEL, ISINK_1KHZ);	/* 1KHz */
 		#else
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_32K_CK_PDN, 0x0);	/* Disable power down */
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_ISINK1_CK_PDN, 0);
@@ -1042,6 +1103,10 @@ int mt_brightness_set_pmic(enum mt65xx_led_pmic pmic_type, u32 level, u32 div)
 		pmic_set_register_value(MT6351_PMIC_ISINK_DIM1_FSEL, ISINK_1KHZ);	/* 1KHz */
 		#endif
 		if (level) {
+            pmic_set_register_value(PMIC_ISINK_CH1_STEP, tmp_level);	/* 16mA */
+            pmic_set_register_value(PMIC_ISINK_DIM1_DUTY, 15);
+            pmic_set_register_value(PMIC_ISINK_DIM1_FSEL, ISINK_1KHZ);	/* 1KHz */
+        //CEI comments end
 			#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
 			pmic_set_register_value(PMIC_ISINK_CH1_EN, NLED_ON);
 			#else
@@ -1088,11 +1153,17 @@ int mt_brightness_set_pmic(enum mt65xx_led_pmic pmic_type, u32 level, u32 div)
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_ISINK4_CK_PDN, 0);
 		pmic_set_register_value(MT6351_PMIC_RG_DRV_ISINK4_CK_CKSEL, 0);
 		pmic_set_register_value(MT6351_PMIC_ISINK_CH4_MODE, ISINK_PWM_MODE);
-		pmic_set_register_value(MT6351_PMIC_ISINK_CH4_STEP, ISINK_3);	/* 16mA */
-		pmic_set_register_value(MT6351_PMIC_ISINK_DIM4_DUTY, 15);
-		pmic_set_register_value(MT6351_PMIC_ISINK_DIM4_FSEL, ISINK_1KHZ);	/* 1KHz */
+        //CEI comments start
+        
+		//pmic_set_register_value(PMIC_ISINK_CH4_STEP, ISINK_3);	/* 16mA */
+		//pmic_set_register_value(PMIC_ISINK_DIM4_DUTY, 15);
+		//pmic_set_register_value(PMIC_ISINK_DIM4_FSEL, ISINK_1KHZ);	/* 1KHz */
 		#endif
 		if (level) {
+		    pmic_set_register_value(PMIC_ISINK_CH4_STEP, tmp_level);	/* 16mA */
+            pmic_set_register_value(PMIC_ISINK_DIM4_DUTY, 15);
+            pmic_set_register_value(PMIC_ISINK_DIM4_FSEL, ISINK_1KHZ);	/* 1KHz */
+        //CEI comments end
 			#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
 			pmic_set_register_value(PMIC_ISINK_CH2_EN, NLED_ON);
 			#else
@@ -1174,7 +1245,11 @@ int mt_brightness_set_pmic_duty_store(u32 level, u32 div)
 
 int mt_mt65xx_led_set_cust(struct cust_mt65xx_led *cust, int level)
 {
-	struct nled_setting led_tmp_setting = { 0, 0, 0 };
+    //CEI comments start
+    
+	//struct nled_setting led_tmp_setting = { 0, 0, 0 };
+	struct nled_setting led_tmp_setting = {0,0,0,0};
+    //CEI comments end
 	int tmp_level = level;
 	static bool button_flag;
 	unsigned int BacklightLevelSupport =
@@ -1281,6 +1356,21 @@ void mt_mt65xx_led_set(struct led_classdev *led_cdev, enum led_brightness level)
 	    container_of(led_cdev, struct mt65xx_led_data, cdev);
 	/* unsigned long flags; */
 	/* spin_lock_irqsave(&leds_lock, flags); */
+	//[Mark] add for INX second source module
+	int cci_lcm_id = 0;
+	cci_lcm_id = get_lcm_id();
+	LEDS_DEBUG("[Mark] LCM_ID : %d \n", cci_lcm_id);
+	if((level > 0) && (level < 256)) {
+		if(cci_lcm_id == 0) //INX panel
+		{
+			level = backlight_change[level-1];
+		}
+		//add for mapping M4 aqua backlight curve
+		else
+		{
+			level = backlight_change_truly[level-1];
+		}
+	}
 
 #ifdef CONFIG_MTK_AAL_SUPPORT
 	if (led_data->level != level) {
@@ -1288,7 +1378,11 @@ void mt_mt65xx_led_set(struct led_classdev *led_cdev, enum led_brightness level)
 		if (strcmp(led_data->cust.name, "lcd-backlight") != 0) {
 			LEDS_DEBUG("Set NLED directly %d at time %lu\n",
 				   led_data->level, jiffies);
-			schedule_work(&led_data->work);
+                //CEI comments start
+                
+                //schedule_work(&led_data->work);
+                mt_mt65xx_led_set_cust(&led_data->cust, led_data->level);
+                //CEI comments end
 		} else {
 			if (level != 0
 			    && level * CONFIG_LIGHTNESS_MAPPING_VALUE < 255) {
@@ -1303,10 +1397,6 @@ void mt_mt65xx_led_set(struct led_classdev *led_cdev, enum led_brightness level)
 			     led_data->level, jiffies, level); */
 			backlight_debug_log(led_data->level, level);
 			/* mt_mt65xx_led_set_cust(&led_data->cust, led_data->level); */
-			disp_pq_notify_backlight_changed((((1 <<
-							     MT_LED_INTERNAL_LEVEL_BIT_CNT)
-							    - 1) * level +
-							   127) / 255);
 			disp_aal_notify_backlight_changed((((1 <<
 							     MT_LED_INTERNAL_LEVEL_BIT_CNT)
 							    - 1) * level +
@@ -1320,7 +1410,11 @@ void mt_mt65xx_led_set(struct led_classdev *led_cdev, enum led_brightness level)
 		if (strcmp(led_data->cust.name, "lcd-backlight") != 0) {
 			LEDS_DEBUG("Set NLED directly %d at time %lu\n",
 				   led_data->level, jiffies);
-			schedule_work(&led_data->work);
+                //CEI comments start
+                
+		//schedule_work(&led_data->work);
+                mt_mt65xx_led_set_cust(&led_data->cust, led_data->level);
+                //CEI comments end
 		} else {
 			if (level != 0
 			    && level * CONFIG_LIGHTNESS_MAPPING_VALUE < 255) {
@@ -1334,10 +1428,6 @@ void mt_mt65xx_led_set(struct led_classdev *led_cdev, enum led_brightness level)
 			    ("Set Backlight directly %d at time %lu, mapping level is %d\n",
 			     led_data->level, jiffies, level); */
 			backlight_debug_log(led_data->level, level);
-			disp_pq_notify_backlight_changed((((1 <<
-							     MT_LED_INTERNAL_LEVEL_BIT_CNT)
-							    - 1) * level +
-							   127) / 255);
 			if (MT65XX_LED_MODE_CUST_BLS_PWM == led_data->cust.mode) {
 				mt_mt65xx_led_set_cust(&led_data->cust,
 						       ((((1 <<
@@ -1361,7 +1451,11 @@ int mt_mt65xx_blink_set(struct led_classdev *led_cdev,
 	struct mt65xx_led_data *led_data =
 	    container_of(led_cdev, struct mt65xx_led_data, cdev);
 	static int got_wake_lock;
-	struct nled_setting nled_tmp_setting = { 0, 0, 0 };
+    //CEI comments start
+    
+	//struct nled_setting nled_tmp_setting = { 0, 0, 0 };
+	struct nled_setting nled_tmp_setting = {0,0,0,0};
+    //CEI comments end
 
 	/* only allow software blink when delay_on or delay_off changed */
 	if (*delay_on != led_data->delay_on
@@ -1394,6 +1488,21 @@ int mt_mt65xx_blink_set(struct led_classdev *led_cdev,
 				    led_data->delay_off;
 				nled_tmp_setting.blink_on_time =
 				    led_data->delay_on;
+                //CEI comments start
+                
+                if (led_cdev->blink_brightness > 0 && led_cdev->blink_brightness < 43)
+                    nled_tmp_setting.blink_level = 0;
+                else if (led_cdev->blink_brightness >= 43 && led_cdev->blink_brightness <= 85)
+                    nled_tmp_setting.blink_level = 1;
+                else if (led_cdev->blink_brightness > 85 && led_cdev->blink_brightness < 128)
+                    nled_tmp_setting.blink_level = 2;
+                else if (led_cdev->blink_brightness >= 128 && led_cdev->blink_brightness <= 170)
+                    nled_tmp_setting.blink_level = 3;
+                else if (led_cdev->blink_brightness > 170 && led_cdev->blink_brightness < 213)
+                    nled_tmp_setting.blink_level = 4;
+                else if (led_cdev->blink_brightness >= 213)
+                    nled_tmp_setting.blink_level = 5;                
+                //CEI comments end
 				mt_led_blink_pmic(led_data->cust.data,
 						  &nled_tmp_setting);
 				return 0;

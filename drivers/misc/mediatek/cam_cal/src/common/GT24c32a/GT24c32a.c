@@ -457,9 +457,6 @@ static long EEPROM_Ioctl(
 				return -EFAULT;
 			}
 		}
-	} else {
-		EEPROMDB("[GT24c32a] a_u4Command failed\n");
-		return -EFAULT;
 	}
 
 	ptempbuf = (stCAM_CAL_INFO_STRUCT *)pBuff;

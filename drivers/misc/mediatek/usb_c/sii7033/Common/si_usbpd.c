@@ -138,12 +138,12 @@ bool sii_usbpd_req_vconn_swap(struct sii70xx_drv_context *drv_context, uint8_t p
 	return -EINVAL;
 }
 
-int sii_drv_set_custom_msg(struct sii70xx_drv_context *drv_context,
+bool sii_drv_set_custom_msg(struct sii70xx_drv_context *drv_context,
 			    uint8_t bus_id, uint8_t data, bool enable)
 {
 	struct sii_usbp_policy_engine *pUsbpd = (struct sii_usbp_policy_engine *)
 	    drv_context->pusbpd_policy;
-	int result;
+	bool result;
 
 	if (enable) {
 		if (drv_context->drp_config == USBPD_UFP) {

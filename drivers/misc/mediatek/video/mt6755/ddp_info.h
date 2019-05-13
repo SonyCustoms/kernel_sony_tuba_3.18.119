@@ -153,7 +153,6 @@ typedef struct _OVL_CONFIG_STRUCT {
 	unsigned int key;
 	unsigned int aen;
 	unsigned char alpha;
-	unsigned int dim_color;
 
 	unsigned int sur_aen;
 	unsigned int src_alpha;
@@ -378,8 +377,5 @@ extern DDP_MODULE_DRIVER ddp_driver_pwm;
 /* extern DDP_MODULE_DRIVER ddp_driver_ufoe; */
 
 extern DDP_MODULE_DRIVER *ddp_modules_driver[DISP_MODULE_NUM];
-
-extern int display_bias_enable(void);
-extern int display_bias_regulator_init(void);
 
 #endif

@@ -58,6 +58,10 @@ static const struct of_device_id cmdq_of_ids[] = {
 };
 #endif
 
+#define CMDQ_MAX_DUMP_REG_COUNT (2048)
+#define CMDQ_MAX_COMMAND_SIZE		(0x10000)
+#define CMDQ_MAX_WRITE_ADDR_COUNT	(PAGE_SIZE / sizeof(u32))
+
 static dev_t gCmdqDevNo;
 static struct cdev *gCmdqCDev;
 static struct class *gCMDQClass;
@@ -327,32 +331,19 @@ static void cmdq_driver_process_read_address_request(cmdqReadAddressStruct *req_
 
 static long cmdq_driver_destroy_secure_medadata(cmdqCommandStruct *pCommand)
 {
-#ifdef CMDQ_SECURE_PATH_SUPPORT
 	if (pCommand->secData.addrMetadatas) {
 		kfree(CMDQ_U32_PTR(pCommand->secData.addrMetadatas));
 		pCommand->secData.addrMetadatas = (cmdqU32Ptr_t) (unsigned long)NULL;
 	}
-#endif
+
 	return 0;
 }
 
 static long cmdq_driver_create_secure_medadata(cmdqCommandStruct *pCommand)
 {
-#ifdef CMDQ_SECURE_PATH_SUPPORT
 	void *pAddrMetadatas = NULL;
-	uint32_t length;
-
-	if (pCommand->secData.addrMetadataCount >=
-		CMDQ_IWC_MAX_ADDR_LIST_LENGTH) {
-		CMDQ_ERR("Metadata %u reach the max allowed number = %u\n",
-			pCommand->secData.addrMetadataCount,
-			CMDQ_IWC_MAX_ADDR_LIST_LENGTH);
-		return -EOVERFLOW;
-	}
-
-	length = pCommand->secData.addrMetadataCount *
-		sizeof(struct cmdqSecAddrMetadataStruct);
-
+	const uint32_t length =
+	    (pCommand->secData.addrMetadataCount) * sizeof(cmdqSecAddrMetadataStruct);
 
 	/* verify parameter */
 	if ((false == pCommand->secData.is_secure) && (0 != pCommand->secData.addrMetadataCount)) {
@@ -400,9 +391,7 @@ static long cmdq_driver_create_secure_medadata(cmdqCommandStruct *pCommand)
 #if 0
 	cmdq_core_dump_secure_metadata(&(pCommand->secData));
 #endif
-#else
-	pCommand->secData.addrMetadatas = 0;
-#endif
+
 	return 0;
 }
 
@@ -419,10 +408,6 @@ static long cmdq_driver_process_command_request(cmdqCommandStruct *pCommand)
 
 	if (pCommand->regRequest.count > CMDQ_MAX_DUMP_REG_COUNT)
 		return -EINVAL;
-
-	/* avoid copy large string */
-	if (pCommand->userDebugStrLen > CMDQ_MAX_DBG_STR_LEN)
-		pCommand->userDebugStrLen = CMDQ_MAX_DBG_STR_LEN;
 
 	/* allocate secure medatata */
 	status = cmdq_driver_create_secure_medadata(pCommand);
@@ -525,8 +510,8 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 {
 	struct cmdqCommandStruct command;
 	struct cmdqJobStruct job;
-	int count[CMDQ_MAX_ENGINE_COUNT] = {0};
-	struct TaskStruct *pTask = NULL;
+	int count[CMDQ_MAX_ENGINE_COUNT];
+	struct TaskStruct *pTask;
 	int32_t status;
 	struct cmdqJobResultStruct jobResult;
 	uint32_t *userRegValue = NULL;
@@ -563,9 +548,7 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		if (copy_from_user(&job, (void *)param, sizeof(cmdqJobStruct)))
 			return -EFAULT;
 
-		if (job.command.regRequest.count > CMDQ_MAX_DUMP_REG_COUNT ||
-			!job.command.blockSize ||
-			job.command.blockSize > CMDQ_MAX_COMMAND_SIZE)
+		if (job.command.blockSize > CMDQ_MAX_COMMAND_SIZE)
 			return -EINVAL;
 
 		/* backup */
@@ -578,10 +561,6 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		status = cmdq_driver_create_reg_address_buffer(&job.command);
 		if (0 != status)
 			return status;
-
-		/* avoid copy large string */
-		if (job.command.userDebugStrLen > CMDQ_MAX_DBG_STR_LEN)
-			job.command.userDebugStrLen = CMDQ_MAX_DBG_STR_LEN;
 
 		/* scenario id fixup */
 		cmdq_core_fix_command_scenario_for_user_space(&job.command);
@@ -625,13 +604,11 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		}
 
 		/* verify job handle */
-		pTask = cmdq_core_get_task_ptr((struct TaskStruct *)
-			(unsigned long)jobResult.hJob);
-		if (!pTask) {
+		if (!cmdqIsValidTaskPtr((TaskStruct *) (unsigned long)jobResult.hJob)) {
 			CMDQ_ERR("invalid task ptr = 0x%llx\n", jobResult.hJob);
-			return -EINVAL;
+			return -EFAULT;
 		}
-
+		pTask = (TaskStruct *) (unsigned long)jobResult.hJob;
 		if (pTask->regCount > CMDQ_MAX_DUMP_REG_COUNT)
 			return -EINVAL;
 
@@ -1016,6 +993,12 @@ static int cmdq_probe(struct platform_device *pDevice)
 		return -EFAULT;
 	}
 #endif
+
+	/* global ioctl access point (/proc/mtk_cmdq) */
+	if (NULL == proc_create(CMDQ_DRIVER_DEVICE_NAME, 0644, NULL, &cmdqOP)) {
+		CMDQ_ERR("CMDQ procfs node create failed\n");
+		return -EFAULT;
+	}
 
 	/* proc debug access point */
 	cmdq_create_debug_entries();

@@ -16,7 +16,6 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/stat.h>
-#include <linux/of.h>
 #include <linux/pm_runtime.h>
 
 #include <linux/mmc/card.h>
@@ -154,18 +153,10 @@ static int mmc_bus_suspend(struct device *dev)
 	if (dev->driver && drv->suspend) {
 		ret = drv->suspend(card);
 		if (ret)
-			goto out;
+			return ret;
 	}
 
 	ret = host->bus_ops->suspend(host);
-	/*
-	 * Restart queue if suspend failed
-	 */
-	if (ret) {
-		if (dev->driver && drv->resume)
-			(void)drv->resume(card);
-	}
-out:
 	return ret;
 }
 
@@ -364,8 +355,6 @@ int mmc_add_card(struct mmc_card *card)
 #endif
 	mmc_init_context_info(card->host);
 
-	card->dev.of_node = mmc_of_find_child_device(card->host, 0);
-
 	ret = device_add(&card->dev);
 	if (ret)
 		return ret;
@@ -394,7 +383,6 @@ void mmc_remove_card(struct mmc_card *card)
 				mmc_hostname(card->host), card->rca);
 		}
 		device_del(&card->dev);
-		of_node_put(card->dev.of_node);
 	}
 
 	put_device(&card->dev);

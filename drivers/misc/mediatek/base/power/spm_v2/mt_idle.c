@@ -2211,12 +2211,6 @@ static ssize_t idle_state_read(struct file *filp,
 	char *p = dbg_buf;
 	int i;
 
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
-
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "********** idle state dump **********\n");
 
 	for (i = 0; i < nr_cpu_ids; i++) {
@@ -2258,9 +2252,6 @@ static ssize_t idle_state_read(struct file *filp,
 
 	len = p - dbg_buf;
 
-	if ((count - *f_pos) < len)
-		return 0;
-
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
 
@@ -2270,9 +2261,6 @@ static ssize_t idle_state_write(struct file *filp,
 	char cmd[NR_CMD_BUF];
 	int idx;
 	int param;
-
-	if (!userbuf)
-		return -EFAULT;
 
 	count = min(count, sizeof(cmd_buf) - 1);
 
@@ -2332,12 +2320,6 @@ static ssize_t mcidle_state_read(struct file *filp, char __user *userbuf, size_t
 	char *p = dbg_buf;
 	int cpus, reason;
 
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
-
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "*********** deep idle state ************\n");
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "mcidle_time_critera=%u\n", mcidle_time_critera);
 
@@ -2359,9 +2341,6 @@ static ssize_t mcidle_state_read(struct file *filp, char __user *userbuf, size_t
 		      "modify tm_cri: echo time value(dec) > /sys/kernel/debug/cpuidle/mcidle_state\n");
 
 	len = p - dbg_buf;
-
-	if ((count - *f_pos) < len)
-		return 0;
 
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
@@ -2388,7 +2367,7 @@ static ssize_t mcidle_state_write(struct file *filp,
 			mcidle_time_critera = param;
 
 		return count;
-	} else if (!kstrtoint(cmd_buf, 10, &param)) {
+	} else if (!kstrtoint(cmd_buf, 10, &param) == 1) {
 		idle_switch[IDLE_TYPE_MC] = param;
 
 		return count;
@@ -2422,12 +2401,6 @@ static ssize_t dpidle_state_read(struct file *filp, char __user *userbuf, size_t
 	char *p = dbg_buf;
 	int i;
 	int k;
-
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
 
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "*********** deep idle state ************\n");
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "dpidle_time_critera=%u\n", dpidle_time_critera);
@@ -2484,9 +2457,6 @@ static ssize_t dpidle_state_read(struct file *filp, char __user *userbuf, size_t
 
 	len = p - dbg_buf;
 
-	if ((count - *f_pos) < len)
-		return 0;
-
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
 
@@ -2527,7 +2497,7 @@ static ssize_t dpidle_state_write(struct file *filp,
 			dpidle_dump_log = param;
 
 		return count;
-	} else if (!kstrtoint(cmd_buf, 10, &param)) {
+	} else if (!kstrtoint(cmd_buf, 10, &param) == 1) {
 		idle_switch[IDLE_TYPE_DP] = param;
 
 		return count;
@@ -2560,12 +2530,6 @@ static ssize_t soidle3_state_read(struct file *filp, char __user *userbuf, size_
 	int len = 0;
 	char *p = dbg_buf;
 	int i;
-
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
 
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "*********** soidle3 state ************\n");
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "soidle3_time_critera=%u\n", soidle3_time_critera);
@@ -2628,9 +2592,6 @@ static ssize_t soidle3_state_read(struct file *filp, char __user *userbuf, size_
 		      "sodi3 flags:   echo sodi3_flags value > /sys/kernel/debug/cpuidle/soidle3_state\n");
 	len = p - dbg_buf;
 
-	if ((count - *f_pos) < len)
-		return 0;
-
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
 
@@ -2675,7 +2636,7 @@ static ssize_t soidle3_state_write(struct file *filp,
 			idle_dbg("sodi3_flags = 0x%x\n", sodi3_flags);
 		}
 		return count;
-	} else if (!kstrtoint(cmd_buf, 10, &param)) {
+	} else if (!kstrtoint(cmd_buf, 10, &param) == 1) {
 		idle_switch[IDLE_TYPE_SO3] = param;
 		return count;
 	}
@@ -2707,12 +2668,6 @@ static ssize_t soidle_state_read(struct file *filp, char __user *userbuf, size_t
 	int len = 0;
 	char *p = dbg_buf;
 	int i;
-
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
 
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "*********** soidle state ************\n");
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "soidle_time_critera=%u\n", soidle_time_critera);
@@ -2763,9 +2718,6 @@ static ssize_t soidle_state_read(struct file *filp, char __user *userbuf, size_t
 
 	len = p - dbg_buf;
 
-	if ((count - *f_pos) < len)
-		return 0;
-
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
 
@@ -2810,7 +2762,7 @@ static ssize_t soidle_state_write(struct file *filp,
 			idle_dbg("sodi_flags = 0x%x\n", sodi_flags);
 		}
 		return count;
-	} else if (!kstrtoint(cmd_buf, 10, &param)) {
+	} else if (!kstrtoint(cmd_buf, 10, &param) == 1) {
 		idle_switch[IDLE_TYPE_SO] = param;
 		return count;
 	}
@@ -2844,12 +2796,6 @@ static ssize_t slidle_state_read(struct file *filp, char __user *userbuf, size_t
 	char *p = dbg_buf;
 	int i;
 
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
-
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "*********** slow idle state ************\n");
 	for (i = 0; i < NR_REASONS; i++) {
 		p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "[%d]slidle_block_cnt[%s]=%lu\n",
@@ -2873,17 +2819,11 @@ static ssize_t slidle_state_read(struct file *filp, char __user *userbuf, size_t
 
 	len = p - dbg_buf;
 
-	if ((count - *f_pos) < len)
-		return 0;
-
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
 
-static ssize_t slidle_state_write(
-	struct file *filp,
-	const char __user *userbuf,
-	size_t count,
-	loff_t *f_pos)
+static ssize_t slidle_state_write(struct file *filp, const char __user *userbuf,
+				  size_t count, loff_t *f_pos)
 {
 	char cmd[NR_CMD_BUF];
 	int param;
@@ -2895,7 +2835,7 @@ static ssize_t slidle_state_write(
 
 	cmd_buf[count] = '\0';
 
-	if (sscanf(cmd_buf, "%127s %d", cmd, &param) == 2) {
+	if (sscanf(userbuf, "%127s %d", cmd, &param) == 2) {
 		if (!strcmp(cmd, "slidle"))
 			idle_switch[IDLE_TYPE_SL] = param;
 		else if (!strcmp(cmd, "enable"))
@@ -2904,7 +2844,7 @@ static ssize_t slidle_state_write(
 			disable_slidle_by_bit(param);
 
 		return count;
-	} else if (!kstrtoint(cmd_buf, 10, &param)) {
+	} else if (!kstrtoint(userbuf, 10, &param) == 1) {
 		idle_switch[IDLE_TYPE_SL] = param;
 		return count;
 	}
@@ -2935,12 +2875,6 @@ static ssize_t reg_dump_read(struct file *filp, char __user *userbuf, size_t cou
 {
 	int len = 0;
 	char *p = dbg_buf;
-
-	if (!userbuf)
-		return -EFAULT;
-
-	if (0 > *f_pos || *f_pos > count)
-		return -EINVAL;
 
 	p += snprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "SPM_PWR_STATUS = 0x%08x\n", idle_readl(SPM_PWR_STATUS));
 
@@ -3004,9 +2938,6 @@ static ssize_t reg_dump_read(struct file *filp, char __user *userbuf, size_t cou
 		      idle_readl(SPM_MDSYS_INTF_INFRA_PWR_CON));
 
 	len = p - dbg_buf;
-
-	if ((count - *f_pos) < len)
-		return 0;
 
 	return simple_read_from_buffer(userbuf, count, f_pos, dbg_buf, len);
 }
@@ -3102,7 +3033,7 @@ static void mt_idle_profile_init(void)
 	mt_idle_block_setting(IDLE_TYPE_RG, rgidle_cnt, NULL, NULL);
 }
 
-void __init mt_cpuidle_framework_init(void)
+void mt_cpuidle_framework_init(void)
 {
 #ifndef USING_STD_TIMER_OPS
 	int err = 0;

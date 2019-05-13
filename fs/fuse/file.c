@@ -7,6 +7,8 @@
 */
 
 #include "fuse_i.h"
+//[CEI comment] fuse: Add support for passthrough read/write
+#include "fuse_passthrough.h"
 #include "mt_fuse.h"
 
 #include <linux/pagemap.h>
@@ -23,7 +25,8 @@
 static const struct file_operations fuse_direct_io_file_operations;
 
 static int fuse_send_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
-			  int opcode, struct fuse_open_out *outargp)
+			 int opcode, struct fuse_open_out *outargp,
+			 struct file **passthrough_filpp)
 {
 	struct fuse_open_in inarg;
 	struct fuse_req *req;
@@ -45,8 +48,14 @@ static int fuse_send_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 	req->out.numargs = 1;
 	req->out.args[0].size = sizeof(*outargp);
 	req->out.args[0].value = outargp;
+	//[CEI comment] fuse: Add support for passthrough read/write
+	req->out.passthrough_filp = NULL;
+
 	fuse_request_send(fc, req);
 	err = req->out.h.error;
+	//[CEI comment] fuse: Add support for passthrough read/write
+	if (req->out.passthrough_filp != NULL)
+		*passthrough_filpp = req->out.passthrough_filp;
 	fuse_put_request(fc, req);
 
 	return err;
@@ -56,9 +65,15 @@ struct fuse_file *fuse_file_alloc(struct fuse_conn *fc)
 {
 	struct fuse_file *ff;
 
-	ff = kzalloc(sizeof(struct fuse_file), GFP_KERNEL);
+	ff = kmalloc(sizeof(struct fuse_file), GFP_KERNEL);
 	if (unlikely(!ff))
 		return NULL;
+
+	//[CEI comment] fuse: Disable passthrough when mmap is called on a file
+	ff->passthrough_filp = NULL;
+	ff->passthrough_enabled = 0;
+	if (fc->passthrough)
+		ff->passthrough_enabled = 1;
 
 	ff->fc = fc;
 	ff->reserved_req = fuse_request_alloc(0);
@@ -155,6 +170,8 @@ int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 		 bool isdir)
 {
 	struct fuse_file *ff;
+	//[CEI comment] fuse: Add support for passthrough read/write
+	struct file *passthrough_filp = NULL;
 	int opcode = isdir ? FUSE_OPENDIR : FUSE_OPEN;
 
 	ff = fuse_file_alloc(fc);
@@ -167,10 +184,14 @@ int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 		struct fuse_open_out outarg;
 		int err;
 
-		err = fuse_send_open(fc, nodeid, file, opcode, &outarg);
+		//[CEI comment] fuse: Add support for passthrough read/write
+		err = fuse_send_open(fc, nodeid, file, opcode, &outarg,
+				     &(passthrough_filp));
 		if (!err) {
 			ff->fh = outarg.fh;
 			ff->open_flags = outarg.open_flags;
+			//[CEI comment] fuse: Add support for passthrough read/write
+			ff->passthrough_filp = passthrough_filp;
 
 		} else if (err != -ENOSYS || isdir) {
 			fuse_file_free(ff);
@@ -289,6 +310,9 @@ void fuse_release_common(struct file *file, int opcode)
 	ff = file->private_data;
 	if (unlikely(!ff))
 		return;
+
+	//[CEI comment] fuse: Add support for passthrough read/write
+	fuse_passthrough_release(ff);
 
 	req = ff->reserved_req;
 	fuse_prepare_release(ff, file->f_flags, opcode);
@@ -456,15 +480,6 @@ static int fuse_flush(struct file *file, fl_owner_t id)
 	fuse_sync_writes(inode);
 	mutex_unlock(&inode->i_mutex);
 
-	if (test_bit(AS_ENOSPC, &file->f_mapping->flags) &&
-	    test_and_clear_bit(AS_ENOSPC, &file->f_mapping->flags))
-		err = -ENOSPC;
-	if (test_bit(AS_EIO, &file->f_mapping->flags) &&
-	    test_and_clear_bit(AS_EIO, &file->f_mapping->flags))
-		err = -EIO;
-	if (err)
-		return err;
-
 	req = fuse_get_req_nofail_nopages(fc, file);
 	memset(&inarg, 0, sizeof(inarg));
 	inarg.fh = ff->fh;
@@ -510,21 +525,6 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 		goto out;
 
 	fuse_sync_writes(inode);
-
-	/*
-	 * Due to implementation of fuse writeback
-	 * filemap_write_and_wait_range() does not catch errors.
-	 * We have to do this directly after fuse_sync_writes()
-	 */
-	if (test_bit(AS_ENOSPC, &file->f_mapping->flags) &&
-	    test_and_clear_bit(AS_ENOSPC, &file->f_mapping->flags))
-		err = -ENOSPC;
-	if (test_bit(AS_EIO, &file->f_mapping->flags) &&
-	    test_and_clear_bit(AS_EIO, &file->f_mapping->flags))
-		err = -EIO;
-	if (err)
-		goto out;
-
 	err = sync_inode_metadata(inode, 1);
 	if (err)
 		goto out;
@@ -961,8 +961,10 @@ out:
 
 static ssize_t fuse_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
+	ssize_t ret_val;
 	struct inode *inode = iocb->ki_filp->f_mapping->host;
 	struct fuse_conn *fc = get_fuse_conn(inode);
+	struct fuse_file *ff = iocb->ki_filp->private_data;
 
 	/*
 	 * In auto invalidate mode, always update attributes on read.
@@ -977,7 +979,14 @@ static ssize_t fuse_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 			return err;
 	}
 
-	return generic_file_read_iter(iocb, to);
+	//[CEI comment] fuse: Add support for passthrough read/write
+	//[CEI comment] fuse: Disable passthrough when mmap is called on a file
+	if (ff && ff->passthrough_enabled && ff->passthrough_filp)
+		ret_val = fuse_passthrough_read_iter(iocb, to);
+	else
+		ret_val = generic_file_read_iter(iocb, to);
+
+	return ret_val;
 }
 
 static void fuse_write_fill(struct fuse_req *req, struct fuse_file *ff,
@@ -1209,6 +1218,8 @@ static ssize_t fuse_perform_write(struct file *file,
 static ssize_t fuse_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct file *file = iocb->ki_filp;
+	//[CEI comment] fuse: Add support for passthrough read/write
+	struct fuse_file *ff = file->private_data;
 	struct address_space *mapping = file->f_mapping;
 	size_t count = iov_iter_count(from);
 	ssize_t written = 0;
@@ -1247,6 +1258,13 @@ static ssize_t fuse_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	err = file_update_time(file);
 	if (err)
 		goto out;
+
+	//[CEI comment] fuse: Add support for passthrough read/write
+	//[CEI comment] fuse: Disable passthrough when mmap is called on a file
+	if (ff && ff->passthrough_enabled && ff->passthrough_filp) {
+		written = fuse_passthrough_write_iter(iocb, from);
+		goto out;
+	}
 
 	if (file->f_flags & O_DIRECT) {
 		written = generic_file_direct_write(iocb, from, pos);
@@ -2138,6 +2156,10 @@ static const struct vm_operations_struct fuse_file_vm_ops = {
 
 static int fuse_file_mmap(struct file *file, struct vm_area_struct *vma)
 {
+	//[CEI comment] fuse: Disable passthrough when mmap is called on a file
+	struct fuse_file *ff = file->private_data;
+	ff->passthrough_enabled = 0;
+
 	if ((vma->vm_flags & VM_SHARED) && (vma->vm_flags & VM_MAYWRITE))
 		fuse_link_write_file(file);
 
@@ -2148,6 +2170,9 @@ static int fuse_file_mmap(struct file *file, struct vm_area_struct *vma)
 
 static int fuse_direct_mmap(struct file *file, struct vm_area_struct *vma)
 {
+	//[CEI comment] fuse: Disable passthrough when mmap is called on a file
+	struct fuse_file *ff = file->private_data;
+	ff->passthrough_enabled = 0;
 	/* Can't provide the coherency needed for MAP_SHARED */
 	if (vma->vm_flags & VM_MAYSHARE)
 		return -ENODEV;
@@ -2881,7 +2906,7 @@ static void fuse_do_truncate(struct file *file)
 	attr.ia_file = file;
 	attr.ia_valid |= ATTR_FILE;
 
-	fuse_do_setattr(file->f_path.dentry, &attr, file);
+	fuse_do_setattr(inode, &attr, file);
 }
 
 static inline loff_t fuse_round_up(loff_t off)

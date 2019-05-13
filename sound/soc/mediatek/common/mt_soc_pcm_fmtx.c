@@ -61,7 +61,7 @@
 #include "mt_soc_pcm_platform.h"
 
 /* #include <mach/mtk_wcn_cmb_stub.h> */
-/* extern  int mtk_wcn_cmb_stub_audio_ctrl(enum CMB_STUB_AIF_X state); */
+/* extern  int mtk_wcn_cmb_stub_audio_ctrl(CMB_STUB_AIF_X state); */
 
 
 static AFE_MEM_CONTROL_T *pMemControl;
@@ -351,7 +351,7 @@ static int mtk_pcm_fmtx_open(struct snd_pcm_substream *substream)
 static int mtk_pcm_fmtx_close(struct snd_pcm_substream *substream)
 {
 	PRINTK_AUD_FMTX("%s\n", __func__);
-	/* mtk_wcn_cmb_stub_audio_ctrl((enum CMB_STUB_AIF_X)CMB_STUB_AIF_0); */
+	/* mtk_wcn_cmb_stub_audio_ctrl((CMB_STUB_AIF_X)CMB_STUB_AIF_0); */
 
 	AudDrv_Clk_Off();
 	return 0;
@@ -368,7 +368,7 @@ static int mtk_pcm_fmtx_start(struct snd_pcm_substream *substream)
 
 	AudDrv_Clk_On();
 
-	/* mtk_wcn_cmb_stub_audio_ctrl((enum CMB_STUB_AIF_X)CMB_STUB_AIF_2); */
+	/* mtk_wcn_cmb_stub_audio_ctrl((CMB_STUB_AIF_X)CMB_STUB_AIF_2); */
 
 	SetMemifSubStream(Soc_Aud_Digital_Block_MEM_DL1, substream);
 	if (runtime->format == SNDRV_PCM_FORMAT_S32_LE ||

@@ -120,7 +120,6 @@ static struct snd_pcm_hardware mtk_pcm_hardware = {
 };
 
 static int speech_md_usage_control;
-static int speech_mic_mute;
 static const char const *speech_md_usage[] = {"Off", "On"};
 static const struct soc_enum Audio_Speech_Enum[] = {
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(speech_md_usage), speech_md_usage),
@@ -145,32 +144,8 @@ static int Audio_Speech_MD_Control_Set(struct snd_kcontrol *kcontrol, struct snd
 	return 0;
 }
 
-static int Audio_Speech_Mic_Mute_Get(struct snd_kcontrol *kcontrol,
-				     struct snd_ctl_elem_value *ucontrol)
-{
-	ucontrol->value.integer.value[0] = speech_mic_mute;
-	return 0;
-}
-
-static int Audio_Speech_Mic_Mute_Set(struct snd_kcontrol *kcontrol,
-				     struct snd_ctl_elem_value *ucontrol)
-{
-	if (ucontrol->value.integer.value[0] > 1 ||
-	    ucontrol->value.integer.value[0] < 0) {
-		pr_debug("%s() wrong mute value=%ld\n", __func__,
-			 ucontrol->value.integer.value[0]);
-		return -EINVAL;
-	}
-	speech_mic_mute = ucontrol->value.integer.value[0];
-	pr_debug("%s(), speech_mic_mute=%d\n", __func__,
-		 speech_mic_mute);
-	return 0;
-}
-
 static const struct snd_kcontrol_new Audio_snd_speech_controls[] = {
 	SOC_ENUM_EXT("Speech_MD_USAGE", Audio_Speech_Enum[0], Audio_Speech_MD_Control_Get, Audio_Speech_MD_Control_Set),
-	SOC_SINGLE_EXT("Speech_MIC_MUTE", SND_SOC_NOPM, 0, 0x1, 0,
-		       Audio_Speech_Mic_Mute_Get, Audio_Speech_Mic_Mute_Set),
 };
 
 static int mtk_voice_pcm_open(struct snd_pcm_substream *substream)

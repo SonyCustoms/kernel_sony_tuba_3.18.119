@@ -2454,18 +2454,13 @@ static inline void kmemleak_load_module(const struct module *mod,
 #endif
 
 #ifdef CONFIG_MODULE_SIG
-static int module_sig_check(struct load_info *info, int flags)
+static int module_sig_check(struct load_info *info)
 {
 	int err = -ENOKEY;
 	const unsigned long markerlen = sizeof(MODULE_SIG_STRING) - 1;
 	const void *mod = info->hdr;
 
-	/*
-	 * Require flags == 0, as a module with version information
-	 * removed is no longer the module that was signed
-	 */
-	if (flags == 0 &&
-	    info->len > markerlen &&
+	if (info->len > markerlen &&
 	    memcmp(mod + info->len - markerlen, MODULE_SIG_STRING, markerlen) == 0) {
 		/* We truncate the module to discard the signature */
 		info->len -= markerlen;
@@ -2484,7 +2479,7 @@ static int module_sig_check(struct load_info *info, int flags)
 	return err;
 }
 #else /* !CONFIG_MODULE_SIG */
-static int module_sig_check(struct load_info *info, int flags)
+static int module_sig_check(struct load_info *info)
 {
 	return 0;
 }
@@ -3220,7 +3215,7 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	long err;
 	char *after_dashes;
 
-	err = module_sig_check(info, flags);
+	err = module_sig_check(info);
 	if (err)
 		goto free_copy;
 
@@ -3861,51 +3856,29 @@ void print_modules(void)
 	struct module *mod;
 	char buf[8];
 
+
+#if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+	printk(KERN_ALERT "Modules linked in:");
+#else // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
 	printk(KERN_DEFAULT "Modules linked in:");
+#endif // #if defined(CCI_KLOG_CRASH_SIZE) && CCI_KLOG_CRASH_SIZE > 0
+
 	/* Most callers should already have preempt disabled, but make sure */
 	preempt_disable();
 	list_for_each_entry_rcu(mod, &modules, list) {
 		if (mod->state == MODULE_STATE_UNFORMED)
 			continue;
+#ifdef CONFIG_MODULES
 		pr_cont(" %s %p %p %d %d %s", mod->name, mod->module_core, mod->module_init,
 				mod->core_size, mod->init_size, module_flags(mod, buf));
+#else
+		pr_cont(" %s%s", mod->name, module_flags(mod, buf));
+#endif
 	}
 	preempt_enable();
 	if (last_unloaded_module[0])
 		pr_cont(" [last unloaded: %s]", last_unloaded_module);
 	pr_cont("\n");
-}
-
-/* MUST ensure called when preempt disabled already */
-int save_modules(char *mbuf, int mbufsize)
-{
-	struct module *mod;
-	char buf[8];
-	/*int off = 0;*/
-	int sz = 0;
-
-	if (mbuf == NULL || mbufsize <= 0) {
-		pr_cont("mrdump: module info buffer wrong(size:%d)\n", mbufsize);
-		return 0;
-	}
-
-	memset(mbuf, '\0', mbufsize);
-	sz += snprintf(mbuf + sz, mbufsize - sz, "Modules linked in:");
-	list_for_each_entry_rcu(mod, &modules, list) {
-		if (mod->state == MODULE_STATE_UNFORMED)
-			continue;
-		if (sz >= mbufsize) {
-			pr_cont("mrdump: module info buffer full(size:%d)\n", mbufsize);
-			break;
-		}
-		sz += snprintf(mbuf + sz, mbufsize - sz, " %s %p %p %d %d %s", mod->name, mod->module_core,
-				mod->module_init, mod->core_size, mod->init_size, module_flags(mod, buf));
-	}
-	if (last_unloaded_module[0] && sz < mbufsize)
-		sz += snprintf(mbuf + sz, mbufsize - sz, " [last unloaded: %s]", last_unloaded_module);
-	if (sz < mbufsize)
-		sz += snprintf(mbuf + sz, mbufsize - sz, "\n");
-	return sz;
 }
 
 #ifdef CONFIG_MODVERSIONS

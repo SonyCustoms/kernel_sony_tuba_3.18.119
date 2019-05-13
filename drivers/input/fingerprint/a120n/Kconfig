@@ -1,4 +1,0 @@
-
-config AGOLD_FINGERPRINT_A120N
-	tristate "Mediatek Fingerprint"
-	default n

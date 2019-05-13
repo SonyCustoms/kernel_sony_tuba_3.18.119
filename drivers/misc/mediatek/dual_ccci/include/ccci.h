@@ -68,7 +68,7 @@ enum LOGGING_MODE {
 #define CCCI_IOC_GET_MD_TYPE			_IOR(CCCI_IOC_MAGIC, 31, unsigned int)	/*  RILD */
 #define CCCI_IOC_STORE_MD_TYPE			_IOW(CCCI_IOC_MAGIC, 32, unsigned int)	/*  RILD */
 #define CCCI_IOC_GET_MD_TYPE_SAVING		_IOR(CCCI_IOC_MAGIC, 33, unsigned int)	/*  META */
-#define CCCI_IOC_GET_EXT_MD_POST_FIX		_IOR(CCCI_IOC_MAGIC, 34, unsigned int)	/*  eemcs_fsd */
+#define CCCI_IOC_GET_EXT_MD_POST_FIX		_IOR(CCCI_IOC_MAGIC, 34, char[32])	/*  eemcs_fsd */
 #define CCCI_IOC_FORCE_FD			_IOW(CCCI_IOC_MAGIC, 35, unsigned int)	/*  RILD(6577) */
 #define CCCI_IOC_AP_ENG_BUILD			_IOW(CCCI_IOC_MAGIC, 36, unsigned int)	/*  md_init(6577) */
 #define CCCI_IOC_GET_MD_MEM_SIZE		_IOR(CCCI_IOC_MAGIC, 37, unsigned int)	/*  md_init(6577) */
@@ -108,7 +108,6 @@ int mk_ccci_dev_node(int md_id);
 void ccci_dev_node_exit(int md_id);
 int statistics_init(int md_id);
 void statistics_exit(int md_id);
-int ccci_helper_init(void);
 
 int get_dev_id_by_md_id(int md_id, char node_name[], int *major, int *minor);
 int get_md_id_by_dev_major(int dev_major);

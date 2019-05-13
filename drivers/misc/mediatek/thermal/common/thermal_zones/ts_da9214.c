@@ -244,7 +244,7 @@ static int tsda9214_sysrst_set_cur_state(struct thermal_cooling_device *cdev, un
 #ifndef CONFIG_ARM64
 		BUG();
 #else
-		BUG();	/* To trigger data abort to reset the system for thermal protection. */
+		*(unsigned int *)0x0 = 0xdead;	/* To trigger data abort to reset the system for thermal protection. */
 #endif
 	}
 	return 0;

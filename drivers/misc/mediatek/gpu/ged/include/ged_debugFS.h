@@ -26,7 +26,7 @@ typedef ssize_t (GED_ENTRY_WRITE_FUNC)(
 GED_ERROR ged_debugFS_create_entry(
     const char*             pszName,
 	void*                   pvDir,
-	const struct seq_operations *psReadOps,
+	struct seq_operations*  psReadOps,
     GED_ENTRY_WRITE_FUNC*   pfnWrite,
 	void*                   pvData,
 	struct dentry**         ppsEntry);

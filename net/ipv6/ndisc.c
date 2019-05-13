@@ -1131,11 +1131,9 @@ static void ndisc_router_discovery(struct sk_buff *skb)
 		in6_dev->if_flags |= IF_RA_RCVD;
 	}
 
-#ifdef CONFIG_MTK_IPV6_VZW
 	/*add for VzW feature : remove IF_RS_VZW_SENT flag*/
 	if (in6_dev->if_flags & IF_RS_VZW_SENT)
 		in6_dev->if_flags &= ~IF_RS_VZW_SENT;
-#endif
 	/*
 	 * Remember the managed/otherconf flags from most recently
 	 * received RA message (RFC 2462) -- yoshfuji
@@ -1219,22 +1217,8 @@ static void ndisc_router_discovery(struct sk_buff *skb)
 		rt->rt6i_flags = (rt->rt6i_flags & ~RTF_PREF_MASK) | RTF_PREF(pref);
 	}
 
-	if (rt) {
-		/*mtk10127 change
-		 *if route lifetime carried by RA msg equals to 0xFFFF, considering it as infinite
-		 * route lifetime and cleaning route expires. Otherwise, setting route expires
-		 * according to the lifetime value.
-		*/
-		if (lifetime == 0xffff) {
-			rt6_clean_expires(rt);
-			pr_info("[mtk_net]RA: %s, rt %p, clean route expires since lifetime %d infinite\n",
-				__func__, rt, lifetime);
-		} else {
-			rt6_set_expires(rt, jiffies + HZ * lifetime);
-			pr_info("[mtk_net]RA: %s, rt %p, set route expires since lifetime %d finite\n",
-				__func__, rt, lifetime);
-		}
-	}
+	if (rt)
+		rt6_set_expires(rt, jiffies + (HZ * lifetime));
 	if (ra_msg->icmph.icmp6_hop_limit) {
 		/* Only set hop_limit on the interface if it is higher than
 		 * the current hop_limit.
@@ -1344,8 +1328,6 @@ skip_linkparms:
 			if (ri->prefix_len == 0 &&
 			    !in6_dev->cnf.accept_ra_defrtr)
 				continue;
-			if (ri->prefix_len < in6_dev->cnf.accept_ra_rt_info_min_plen)
-				continue;
 			if (ri->prefix_len > in6_dev->cnf.accept_ra_rt_info_max_plen)
 				continue;
 			rt6_route_rcv(skb->dev, (u8 *)p, (p->nd_opt_len) << 3,
@@ -1395,13 +1377,13 @@ skip_routeinfo:
 			rt6_mtu_change(skb->dev, mtu);
 		}
 	}
-#ifdef MTK_DHCPV6C_WIFI
+#ifdef CONFIG_MTK_DHCPV6C_WIFI
 	if (in6_dev->if_flags & IF_RA_OTHERCONF) {
-		pr_debug("receive RA with o bit!\n");
+		pr_info("[mtk_net]receive RA with o bit!\n");
 		in6_dev->cnf.ra_info_flag = 1;
 	}
 	if (in6_dev->if_flags & IF_RA_MANAGED) {
-		pr_debug("receive RA with m bit!\n");
+		pr_info("[mtk_net]receive RA with m bit!\n");
 		in6_dev->cnf.ra_info_flag = 2;
 	}
 #endif
@@ -1411,10 +1393,10 @@ skip_routeinfo:
 		     p;
 		     p = ndisc_next_useropt(p, ndopts.nd_useropts_end)) {
 			ndisc_ra_useropt(skb, p);
-#ifdef MTK_DHCPV6C_WIFI
-		/* only clear ra_info_flag when O bit is set */
-			 if (p->nd_opt_type == ND_OPT_RDNSS && in6_dev->if_flags & IF_RA_OTHERCONF) {
-				pr_debug("RDNSS, ignore RA with o bit!\n");
+#ifdef CONFIG_MTK_DHCPV6C_WIFI
+			/* only clear ra_info_flag when O bit is set */
+			 if ((p->nd_opt_type == ND_OPT_RDNSS) && (in6_dev->cnf.ra_info_flag == 1)) {
+				pr_info("[mtk_net]RDNSS, ignore RA with o bit!\n");
 				in6_dev->cnf.ra_info_flag = 0;
 			}
 #endif
@@ -1482,8 +1464,7 @@ static void ndisc_fill_redirect_hdr_option(struct sk_buff *skb,
 	*(opt++) = (rd_len >> 3);
 	opt += 6;
 
-	skb_copy_bits(orig_skb, skb_network_offset(orig_skb), opt,
-		      rd_len - 8);
+	memcpy(opt, ipv6_hdr(orig_skb), rd_len - 8);
 }
 
 void ndisc_send_redirect(struct sk_buff *skb, const struct in6_addr *target)
@@ -1686,8 +1667,6 @@ static int ndisc_netdev_event(struct notifier_block *this, unsigned long event, 
 	case NETDEV_CHANGEADDR:
 		neigh_changeaddr(&nd_tbl, dev);
 		fib6_run_gc(0, net, false);
-		/* fallthrough */
-	case NETDEV_UP:
 		idev = in6_dev_get(dev);
 		if (!idev)
 			break;

@@ -49,7 +49,7 @@ struct page_pid_logger {
 	unsigned short pid2;
 };
 
-#ifdef CONFIG_MTK_USE_RESERVED_EXT_MEM
+#ifdef CONFIG_MTK_EXTMEM
 extern void *extmem_malloc_page_align(size_t bytes);
 #endif
 

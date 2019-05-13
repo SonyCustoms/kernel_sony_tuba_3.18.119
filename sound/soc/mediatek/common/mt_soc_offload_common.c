@@ -1137,11 +1137,6 @@ static long OffloadService_ioctl_compat(struct file *file, unsigned int cmd,
 {
 	long ret;
 
-	if (arg == NULL)
-		ret = -1;
-		return ret;
-	}
-
 	switch (_IOC_NR(cmd)) {
 	case _IOC_NR(OFFLOADSERVICE_WRITE): {
 		OFFLOAD_WRITE_KERNEL_T __user *param32;

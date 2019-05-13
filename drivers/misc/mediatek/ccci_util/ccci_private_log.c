@@ -250,9 +250,7 @@ static const struct file_operations ccci_log_fops = {
 #define CCCI_NORMAL_BUF			(4096*2)
 #define CCCI_REPEAT_BUF			(4096*32)
 #define CCCI_REG_DUMP_BUF		(4096*64)
-#define CCCI_HISTORY_BUF		(4096*64)
-
-#define MD3_CCCI_HISTORY_BUF		(4096*32)
+#define CCCI_HISTORY_BUF		(4096*32)
 
 
 struct ccci_dump_buffer {
@@ -324,7 +322,7 @@ static struct buffer_node node_array[2][CCCI_DUMP_MAX+1] = {
 		{&normal_ctlb[1], CCCI_NORMAL_BUF, CCCI_DUMP_ATTR_RING, CCCI_DUMP_NORMAL},
 		{&repeat_ctlb[1], CCCI_REPEAT_BUF, CCCI_DUMP_ATTR_RING, CCCI_DUMP_REPEAT},
 		{&reg_dump_ctlb[1], CCCI_REG_DUMP_BUF, CCCI_DUMP_ATTR_RING, CCCI_DUMP_MEM_DUMP},
-		{&history_ctlb[1], MD3_CCCI_HISTORY_BUF, CCCI_DUMP_ATTR_RING, CCCI_DUMP_HISTORY},
+		{&history_ctlb[1], CCCI_HISTORY_BUF, CCCI_DUMP_ATTR_RING, CCCI_DUMP_HISTORY},
 	}
 };
 

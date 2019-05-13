@@ -184,4 +184,8 @@ source "drivers/ras/Kconfig"
 
 source "drivers/thunderbolt/Kconfig"
 
+#[VY36] ==> CCI KLog, added by Jimmy@CCI
+source "drivers/cci/Kconfig"
+#[VY36] <== CCI KLog, added by Jimmy@CCI
+
 endmenu

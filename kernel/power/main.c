@@ -15,6 +15,10 @@
 #include <linux/workqueue.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
+#include <linux/random.h>
+#ifdef CONFIG_PM_WAKEUP_TIMES
+#include <linux/poll.h>
+#endif
 
 #include "power.h"
 
@@ -29,7 +33,18 @@
 #undef hib_warn
 #define hib_warn(fmt, ...) pr_warn("[%s][%s]" fmt, _TAG_HIB_M, __func__, ##__VA_ARGS__)
 
+/*
+ * suspend back-off default values
+ */
+#define SBO_SLEEP_MSEC 1100
+#define SBO_TIME 10
+#define SBO_CNT 10
+
+static unsigned suspend_short_count;
+static struct wakeup_source *ws;
+
 DEFINE_MUTEX(pm_mutex);
+EXPORT_SYMBOL_GPL(pm_mutex);
 
 #ifdef CONFIG_PM_SLEEP
 
@@ -49,19 +64,13 @@ int unregister_pm_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(unregister_pm_notifier);
 
-int __pm_notifier_call_chain(unsigned long val, int nr_to_call, int *nr_calls)
+int pm_notifier_call_chain(unsigned long val)
 {
-	int ret;
-
-	ret = __blocking_notifier_call_chain(&pm_chain_head, val, NULL,
-						nr_to_call, nr_calls);
+	int ret = blocking_notifier_call_chain(&pm_chain_head, val, NULL);
 
 	return notifier_to_errno(ret);
 }
-int pm_notifier_call_chain(unsigned long val)
-{
-	return __pm_notifier_call_chain(val, -1, NULL);
-}
+EXPORT_SYMBOL_GPL(pm_notifier_call_chain);
 
 /* If set, devices may be suspended and resumed asynchronously. */
 int pm_async_enabled = 1;
@@ -226,6 +235,51 @@ static int suspend_stats_show(struct seq_file *s, void *unused)
 				suspend_stats.failed_steps[index]));
 	}
 
+#ifdef CONFIG_PM_WAKEUP_TIMES
+	seq_printf(s,	"%s\n%s  %lldms (%s %lldms %s %lldms)\n" \
+			"%s  %lldms (%s %lldms %s %lldms)\n" \
+			"%s  %lldms (%s %lldms %s %lldms)\n" \
+			"%s  %lldms\n",
+		"suspend time:",
+		"  min:", ktime_to_ms(ktime_sub(
+			suspend_stats.suspend_min_time.end,
+			suspend_stats.suspend_min_time.start)),
+		"start:", ktime_to_ms(suspend_stats.suspend_min_time.start),
+		"end:", ktime_to_ms(suspend_stats.suspend_min_time.end),
+		"  max:", ktime_to_ms(ktime_sub(
+			suspend_stats.suspend_max_time.end,
+			suspend_stats.suspend_max_time.start)),
+		"start:", ktime_to_ms(suspend_stats.suspend_max_time.start),
+		"end:", ktime_to_ms(suspend_stats.suspend_max_time.end),
+		"  last:", ktime_to_ms(ktime_sub(
+			suspend_stats.suspend_last_time.end,
+			suspend_stats.suspend_last_time.start)),
+		"start:", ktime_to_ms(suspend_stats.suspend_last_time.start),
+		"end:", ktime_to_ms(suspend_stats.suspend_last_time.end),
+		"  avg:", ktime_to_ms(suspend_stats.suspend_avg_time));
+
+	seq_printf(s,	"%s\n%s  %lldms (%s %lldms %s %lldms)\n" \
+			"%s  %lldms (%s %lldms %s %lldms)\n" \
+			"%s  %lldms (%s %lldms %s %lldms)\n" \
+			"%s  %lldms\n",
+		"resume time:",
+		"  min:", ktime_to_ms(ktime_sub(
+			suspend_stats.resume_min_time.end,
+			suspend_stats.resume_min_time.start)),
+		"start:", ktime_to_ms(suspend_stats.resume_min_time.start),
+		"end:", ktime_to_ms(suspend_stats.resume_min_time.end),
+		"  max:", ktime_to_ms(ktime_sub(
+			suspend_stats.resume_max_time.end,
+			suspend_stats.resume_max_time.start)),
+		"start:", ktime_to_ms(suspend_stats.resume_max_time.start),
+		"end:", ktime_to_ms(suspend_stats.resume_max_time.end),
+		"  last:", ktime_to_ms(ktime_sub(
+			suspend_stats.resume_last_time.end,
+			suspend_stats.resume_last_time.start)),
+		"start:", ktime_to_ms(suspend_stats.resume_last_time.start),
+		"end:", ktime_to_ms(suspend_stats.resume_last_time.end),
+		"  avg:", ktime_to_ms(suspend_stats.resume_avg_time));
+#endif
 	return 0;
 }
 
@@ -234,10 +288,29 @@ static int suspend_stats_open(struct inode *inode, struct file *file)
 	return single_open(file, suspend_stats_show, NULL);
 }
 
+#ifdef CONFIG_PM_WAKEUP_TIMES
+static unsigned int suspend_stats_poll(struct file *filp,
+			struct poll_table_struct *wait)
+{
+	unsigned int mask = 0;
+
+	poll_wait(filp, &suspend_stats_queue.wait_queue, wait);
+	if (suspend_stats_queue.resume_done) {
+		mask |= (POLLIN | POLLRDNORM);
+		suspend_stats_queue.resume_done = 0;
+	}
+
+	return mask;
+}
+#endif
+
 static const struct file_operations suspend_stats_operations = {
 	.open           = suspend_stats_open,
 	.read           = seq_read,
 	.llseek         = seq_lseek,
+#ifdef CONFIG_PM_WAKEUP_TIMES
+	.poll           = suspend_stats_poll,
+#endif
 	.release        = single_release,
 };
 
@@ -245,6 +318,9 @@ static int __init pm_debugfs_init(void)
 {
 	debugfs_create_file("suspend_stats", S_IFREG | S_IRUGO,
 			NULL, NULL, &suspend_stats_operations);
+#ifdef CONFIG_PM_WAKEUP_TIMES
+	init_waitqueue_head(&suspend_stats_queue.wait_queue);
+#endif
 	return 0;
 }
 
@@ -354,10 +430,28 @@ static suspend_state_t decode_state(const char *buf, size_t n)
 	return PM_SUSPEND_ON;
 }
 
+static void
+suspend_backoff_range(u32 start, u32 end)
+{
+	u32 range, timeout;
+
+	if (end <= start)
+		return;
+
+	range = end - start;
+	timeout = get_random_int() % range + start;
+
+	pr_info("suspend: too many immediate wakeups, back off (%u msec)\n", timeout);
+	__pm_wakeup_event(ws, timeout);
+}
+
 static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
 	suspend_state_t state;
+	struct timespec ts_entry, ts_exit;
+	u64 elapsed_msecs64;
+	u32 elapsed_msecs32;
 	int error;
 
 #ifdef CONFIG_MTK_HIBERNATION
@@ -389,7 +483,30 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	pr_warn("[%s]: state = (%d)\n", __func__, state);
 
 	if (state < PM_SUSPEND_MAX) {
+		/*
+		 * We want to prevent system from frequent periodic wake-ups
+		 * when sleeping time is less or equal certain interval.
+		 * It's done in order to save power in certain cases, one of
+		 * the examples is GPS tracking, but not only.
+		 */
+		getnstimeofday(&ts_entry);
 		error = pm_suspend(state);
+		getnstimeofday(&ts_exit);
+
+		elapsed_msecs64 = timespec_to_ns(&ts_exit) -
+			timespec_to_ns(&ts_entry);
+		do_div(elapsed_msecs64, NSEC_PER_MSEC);
+		elapsed_msecs32 = elapsed_msecs64;
+
+		if (elapsed_msecs32 <= SBO_SLEEP_MSEC) {
+			if (suspend_short_count == SBO_CNT)
+				suspend_backoff_range((SBO_TIME * MSEC_PER_SEC) / 2,
+					SBO_TIME * MSEC_PER_SEC);
+			else
+				suspend_short_count++;
+		} else {
+			suspend_short_count = 0;
+		}
 		pr_warn("[%s]: pm_suspend() return (%d)\n", __func__, error);
 	} else if (state == PM_SUSPEND_MAX) {
 #ifdef CONFIG_MTK_HIBERNATION
@@ -687,6 +804,8 @@ static int __init pm_init(void)
 	if (error)
 		return error;
 	pm_print_times_init();
+
+	ws = wakeup_source_register("suspend_backoff");
 	return pm_autosleep_init();
 }
 

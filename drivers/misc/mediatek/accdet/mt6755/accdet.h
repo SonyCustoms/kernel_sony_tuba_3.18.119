@@ -94,7 +94,7 @@ enum accdet_report_state {
 	NO_DEVICE = 0,
 	HEADSET_MIC = 1,
 	HEADSET_NO_MIC = 2,
-	/*HEADSET_ILEGAL = 3,*/
+	HEADSET_ILEGAL = 3, // BSP_Audio_S: B2359 20161229 FP019378:Non-CTIA headset warning message
 	/*DOUBLE_CHECK_TV = 4*/
 };
 
@@ -103,7 +103,7 @@ enum accdet_status {
 	MIC_BIAS = 1,
 	/*DOUBLE_CHECK = 2,*/
 	HOOK_SWITCH = 2,
-	/*MIC_BIAS_ILLEGAL =3,*/
+	MIC_BIAS_ILLEGAL =3, // BSP_Audio_S: B2359 20161229 FP019378:Non-CTIA headset warning message
 	/*TV_OUT = 5,*/
 	STAND_BY = 4
 };

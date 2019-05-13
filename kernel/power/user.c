@@ -12,6 +12,7 @@
 #include <linux/suspend.h>
 #include <linux/syscalls.h>
 #include <linux/reboot.h>
+#include <linux/export.h>
 #include <linux/string.h>
 #include <linux/device.h>
 #include <linux/miscdevice.h>
@@ -43,11 +44,12 @@ static struct snapshot_data {
 } snapshot_state;
 
 atomic_t snapshot_device_available = ATOMIC_INIT(1);
+EXPORT_SYMBOL_GPL(snapshot_device_available);
 
 static int snapshot_open(struct inode *inode, struct file *filp)
 {
 	struct snapshot_data *data;
-	int error, nr_calls = 0;
+	int error;
 
 	if (!hibernation_available())
 		return -EPERM;
@@ -74,9 +76,9 @@ static int snapshot_open(struct inode *inode, struct file *filp)
 			swap_type_of(swsusp_resume_device, 0, NULL) : -1;
 		data->mode = O_RDONLY;
 		data->free_bitmaps = false;
-		error = __pm_notifier_call_chain(PM_HIBERNATION_PREPARE, -1, &nr_calls);
+		error = pm_notifier_call_chain(PM_HIBERNATION_PREPARE);
 		if (error)
-			__pm_notifier_call_chain(PM_POST_HIBERNATION, --nr_calls, NULL);
+			pm_notifier_call_chain(PM_POST_HIBERNATION);
 	} else {
 		/*
 		 * Resuming.  We may need to wait for the image device to
@@ -86,15 +88,13 @@ static int snapshot_open(struct inode *inode, struct file *filp)
 
 		data->swap = -1;
 		data->mode = O_WRONLY;
-		error = __pm_notifier_call_chain(PM_RESTORE_PREPARE, -1, &nr_calls);
+		error = pm_notifier_call_chain(PM_RESTORE_PREPARE);
 		if (!error) {
 			error = create_basic_memory_bitmaps();
 			data->free_bitmaps = !error;
-		} else
-			nr_calls--;
-
+		}
 		if (error)
-			__pm_notifier_call_chain(PM_POST_RESTORE, nr_calls, NULL);
+			pm_notifier_call_chain(PM_POST_RESTORE);
 	}
 	if (error)
 		atomic_inc(&snapshot_device_available);
@@ -184,11 +184,6 @@ static ssize_t snapshot_write(struct file *filp, const char __user *buf,
 			goto unlock;
 	} else {
 		res = PAGE_SIZE - pg_offp;
-	}
-
-	if (!data_of(data->handle)) {
-		res = -EINVAL;
-		goto unlock;
 	}
 
 	res = simple_write_to_buffer(data_of(data->handle), res, &pg_offp,

@@ -8,7 +8,7 @@ extern struct page_ext_operations page_owner_ops;
 extern void __reset_page_owner(struct page *page, unsigned int order);
 extern void __set_page_owner(struct page *page,
 			unsigned int order, gfp_t gfp_mask);
-extern gfp_t __get_page_owner_gfp(struct page *page);
+extern int __dump_pfn_backtrace(unsigned long pfn);
 
 static inline void reset_page_owner(struct page *page, unsigned int order)
 {
@@ -27,29 +27,13 @@ static inline void set_page_owner(struct page *page,
 	__set_page_owner(page, order, gfp_mask);
 }
 
-static inline gfp_t get_page_owner_gfp(struct page *page)
+static inline int dump_pfn_backtrace(unsigned long pfn)
 {
 	if (likely(!page_owner_inited))
 		return 0;
 
-	return __get_page_owner_gfp(page);
+	return __dump_pfn_backtrace(pfn);
 }
-#ifdef CONFIG_PAGE_OWNER_SLIM
-
-#define BT_HASH_TABLE_SIZE      1801
-struct BtEntry {
-	struct list_head list;
-	size_t nr_entries;
-	size_t allocations;
-	unsigned long backtrace[8];
-};
-
-struct BtTable {
-	size_t count;
-	struct list_head list[BT_HASH_TABLE_SIZE];
-};
-#endif
-
 #else
 static inline void reset_page_owner(struct page *page, unsigned int order)
 {
@@ -58,7 +42,7 @@ static inline void set_page_owner(struct page *page,
 			unsigned int order, gfp_t gfp_mask)
 {
 }
-static inline gfp_t get_page_owner_gfp(struct page *page)
+static inline int dump_pfn_backtrace(unsigned long pfn)
 {
 	return 0;
 }

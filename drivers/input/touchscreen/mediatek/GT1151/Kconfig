@@ -2,7 +2,7 @@
 # Touchscreen driver configuration
 #
 config TOUCHSCREEN_MTK_GT1151
-	bool "GT1151 for Mediatek package"
+	tristate "GT1151 for Mediatek package"
 	default n
 	help
 	  Say Y here if you have GT1151 touch panel.

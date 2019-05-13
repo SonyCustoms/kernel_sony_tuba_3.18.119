@@ -13,8 +13,5 @@
 
 #obj-y += imx214otp.o
 obj-y += imx214mipiraw_Sensor.o
-ifeq ($(AGOLD_IMX214_OTP_NULL),)
-obj-y += imx214_otp_code.o
-endif
 
 

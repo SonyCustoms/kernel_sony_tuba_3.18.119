@@ -78,7 +78,7 @@ static ssize_t env_proc_read(struct file *file, char __user *buf, size_t size, l
 	}
 	if (!env_valid) {
 		pr_debug("[%s]read no env valid\n", MODULE_NAME);
-		page += snprintf(page, 32, "\nno env valid\n");
+		page += sprintf(page, "\nno env valid\n");
 		len = page - &p[0];
 
 		if (*ppos >= len)
@@ -106,13 +106,8 @@ env_proc_write(struct file *file, const char __user *buf, size_t size, loff_t *p
 {
 	u8 *buffer = NULL;
 	int ret = 0, i, v_index = 0;
-	if (size > CFG_ENV_DATA_SIZE) {
-		ret = -ERANGE;
-		pr_err("[%s]break for size too large\n", MODULE_NAME);
-		goto fail_malloc;
-	}
 
-	buffer = kzalloc(size+1, GFP_KERNEL);
+	buffer = kzalloc(size, GFP_KERNEL);
 	if (!buffer) {
 		ret = -ENOMEM;
 		pr_err("[%s]alloc buffer fail\n", MODULE_NAME);
@@ -123,7 +118,6 @@ env_proc_write(struct file *file, const char __user *buf, size_t size, loff_t *p
 		ret = -EFAULT;
 		goto end;
 	}
-	buffer[size] = 0;
 	/*parse buffer into name and value */
 	for (i = 0; i < size; i++) {
 		if (buffer[i] == '=') {
@@ -168,17 +162,12 @@ static long env_proc_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 		ret = -EPERM;
 		goto end;
 	}
-	if (en_ctl.name_len >= CFG_ENV_DATA_SIZE || en_ctl.value_len >= CFG_ENV_DATA_SIZE) {
-		ret = -EFAULT;
-		goto end;
-	}
-
-	name_buf = kmalloc(en_ctl.name_len+1, GFP_KERNEL);
+	name_buf = kmalloc(en_ctl.name_len, GFP_KERNEL);
 	if (!name_buf) {
 		ret = -ENOMEM;
 		goto fail;
 	}
-	value_buf = kmalloc(en_ctl.value_len+1, GFP_KERNEL);
+	value_buf = kmalloc(en_ctl.value_len, GFP_KERNEL);
 	if (!value_buf) {
 		ret = -ENOMEM;
 		goto fail_malloc;
@@ -187,7 +176,6 @@ static long env_proc_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 		ret = -EFAULT;
 		goto end;
 	}
-	name_buf[en_ctl.name_len] = 0;
 	if (*name_buf == '\0') {
 		ret = 0;
 		goto end;
@@ -218,7 +206,6 @@ static long env_proc_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			ret = -EFAULT;
 			goto end;
 		}
-		value_buf[en_ctl.value_len] = 0;
 		ret = set_env(name_buf, value_buf);
 		break;
 	case ENV_SET_PID:

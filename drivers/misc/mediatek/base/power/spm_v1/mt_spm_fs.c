@@ -52,9 +52,6 @@ static ssize_t show_pcm_desc(const struct pcm_desc *pcmdesc, char *buf)
 {
 	char *p = buf;
 
-	if (!pcmdesc)
-		return 0;
-
 	p += sprintf(p, "version = %s\n", pcmdesc->version);
 	p += sprintf(p, "base = 0x%p\n", pcmdesc->base);
 	p += sprintf(p, "size = %u\n", pcmdesc->size);
@@ -81,7 +78,11 @@ static ssize_t suspend_pcm_show(struct kobject *kobj, struct kobj_attribute *att
 
 static ssize_t dpidle_pcm_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
+#if defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
+	return 0; /* TODO */
+#else
 	return show_pcm_desc(__spm_dpidle.pcmdesc, buf);
+#endif
 }
 
 static ssize_t sodi_pcm_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
@@ -192,7 +193,11 @@ static ssize_t suspend_ctrl_show(struct kobject *kobj, struct kobj_attribute *at
 
 static ssize_t dpidle_ctrl_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
+#if defined(CONFIG_ARCH_MT6570) ||  defined(CONFIG_ARCH_MT6580)
+	return 0; /* TODO */
+#else
 	return show_pwr_ctrl(__spm_dpidle.pwrctrl, buf);
+#endif
 }
 
 static ssize_t sodi_ctrl_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
@@ -363,7 +368,11 @@ static ssize_t suspend_ctrl_store(struct kobject *kobj, struct kobj_attribute *a
 static ssize_t dpidle_ctrl_store(struct kobject *kobj, struct kobj_attribute *attr,
 				 const char *buf, size_t count)
 {
+#if defined(CONFIG_ARCH_MT6570) ||  defined(CONFIG_ARCH_MT6580)
+	return 0; /* TODO */
+#else
 	return store_pwr_ctrl(__spm_dpidle.pwrctrl, buf, count);
+#endif
 }
 
 static ssize_t sodi_ctrl_store(struct kobject *kobj, struct kobj_attribute *attr,

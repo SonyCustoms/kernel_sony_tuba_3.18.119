@@ -56,7 +56,7 @@ extern void mt_pidlog_write_begin(struct page *p);
  * Maximum number of blkcg policies allowed to be registered concurrently.
  * Defined here to simplify include dependency.
  */
-#define BLKCG_MAX_POLS		2
+#define BLKCG_MAX_POLS		3
 
 struct request;
 typedef void (rq_end_io_fn)(struct request *, int);
@@ -220,9 +220,6 @@ struct request {
 
 	/* for bidi */
 	struct request *next_rq;
-
-	ktime_t			lat_hist_io_start;
-	int			lat_hist_enabled;
 };
 
 static inline unsigned short req_get_ioprio(struct request *req)
@@ -338,6 +335,7 @@ struct request_queue {
 	struct request_list	root_rl;
 
 	request_fn_proc		*request_fn;
+	request_fn_proc		*urgent_request_fn;
 	make_request_fn		*make_request_fn;
 	prep_rq_fn		*prep_rq_fn;
 	unprep_rq_fn		*unprep_rq_fn;
@@ -455,6 +453,8 @@ struct request_queue {
 #endif
 
 	struct queue_limits	limits;
+	bool			notified_urgent;
+	bool			dispatched_urgent;
 
 	/*
 	 * sg stuff
@@ -630,7 +630,7 @@ static inline void queue_flag_clear(unsigned int flag, struct request_queue *q)
 
 #define list_entry_rq(ptr)	list_entry((ptr), struct request, queuelist)
 
-#define rq_data_dir(rq)		((int)((rq)->cmd_flags & 1))
+#define rq_data_dir(rq)		(((rq)->cmd_flags & 1) != 0)
 
 /*
  * Driver can handle struct request, if it either has an old style
@@ -809,6 +809,8 @@ extern struct request *blk_make_request(struct request_queue *, struct bio *,
 					gfp_t);
 extern void blk_rq_set_block_pc(struct request *);
 extern void blk_requeue_request(struct request_queue *, struct request *);
+extern int blk_reinsert_request(struct request_queue *q, struct request *rq);
+extern bool blk_reinsert_req_sup(struct request_queue *q);
 extern void blk_add_request_payload(struct request *rq, struct page *page,
 		unsigned int len);
 extern int blk_rq_check_limits(struct request_queue *q, struct request *rq);
@@ -933,8 +935,8 @@ static inline unsigned int blk_max_size_offset(struct request_queue *q,
 	if (!q->limits.chunk_sectors)
 		return q->limits.max_sectors;
 
-	return min(q->limits.max_sectors, (unsigned int)(q->limits.chunk_sectors -
-			(offset & (q->limits.chunk_sectors - 1))));
+	return q->limits.chunk_sectors -
+			(offset & (q->limits.chunk_sectors - 1));
 }
 
 static inline unsigned int blk_rq_get_max_sectors(struct request *rq)
@@ -1009,6 +1011,7 @@ extern struct request_queue *blk_init_queue_node(request_fn_proc *rfn,
 extern struct request_queue *blk_init_queue(request_fn_proc *, spinlock_t *);
 extern struct request_queue *blk_init_allocated_queue(struct request_queue *,
 						      request_fn_proc *, spinlock_t *);
+extern void blk_urgent_request(struct request_queue *q, request_fn_proc *fn);
 extern void blk_cleanup_queue(struct request_queue *);
 extern void blk_queue_make_request(struct request_queue *, make_request_fn *);
 extern void blk_queue_bounce_limit(struct request_queue *, u64);
@@ -1636,62 +1639,6 @@ extern int __blkdev_driver_ioctl(struct block_device *, fmode_t, unsigned int,
 extern int bdev_read_page(struct block_device *, sector_t, struct page *);
 extern int bdev_write_page(struct block_device *, sector_t, struct page *,
 						struct writeback_control *);
-
-/*
- * X-axis for IO latency histogram support.
- */
-static const u_int64_t latency_x_axis_us[] = {
-	100,
-	200,
-	300,
-	400,
-	500,
-	600,
-	700,
-	800,
-	900,
-	1000,
-	1200,
-	1400,
-	1600,
-	1800,
-	2000,
-	2500,
-	3000,
-	4000,
-	5000,
-	6000,
-	7000,
-	9000,
-	10000
-};
-
-#define BLK_IO_LAT_HIST_DISABLE         0
-#define BLK_IO_LAT_HIST_ENABLE          1
-#define BLK_IO_LAT_HIST_ZERO            2
-
-struct io_latency_state {
-	u_int64_t	latency_y_axis[ARRAY_SIZE(latency_x_axis_us) + 1];
-	u_int64_t	latency_elems;
-	u_int64_t	latency_sum;
-};
-
-static inline void
-blk_update_latency_hist(struct io_latency_state *s, u_int64_t delta_us)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(latency_x_axis_us); i++)
-		if (delta_us < (u_int64_t)latency_x_axis_us[i])
-			break;
-	s->latency_y_axis[i]++;
-	s->latency_elems++;
-	s->latency_sum += delta_us;
-}
-
-ssize_t blk_latency_hist_show(char* name, struct io_latency_state *s,
-		char *buf, int buf_size);
-
 #else /* CONFIG_BLOCK */
 
 struct block_device;

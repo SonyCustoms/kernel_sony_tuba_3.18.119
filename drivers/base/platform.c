@@ -744,10 +744,9 @@ static ssize_t driver_override_store(struct device *dev,
 				     const char *buf, size_t count)
 {
 	struct platform_device *pdev = to_platform_device(dev);
-	char *driver_override, *old, *cp;
+	char *driver_override, *old = pdev->driver_override, *cp;
 
-	/* We need to keep extra room for a newline */
-	if (count >= (PAGE_SIZE - 1))
+	if (count > PATH_MAX)
 		return -EINVAL;
 
 	driver_override = kstrndup(buf, count, GFP_KERNEL);
@@ -758,15 +757,12 @@ static ssize_t driver_override_store(struct device *dev,
 	if (cp)
 		*cp = '\0';
 
-	device_lock(dev);
-	old = pdev->driver_override;
 	if (strlen(driver_override)) {
 		pdev->driver_override = driver_override;
 	} else {
 		kfree(driver_override);
 		pdev->driver_override = NULL;
 	}
-	device_unlock(dev);
 
 	kfree(old);
 
@@ -777,12 +773,8 @@ static ssize_t driver_override_show(struct device *dev,
 				    struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = to_platform_device(dev);
-	ssize_t len;
 
-	device_lock(dev);
-	len = sprintf(buf, "%s\n", pdev->driver_override);
-	device_unlock(dev);
-	return len;
+	return sprintf(buf, "%s\n", pdev->driver_override);
 }
 static DEVICE_ATTR_RW(driver_override);
 
@@ -1049,9 +1041,6 @@ u64 dma_get_required_mask(struct device *dev)
 	if (!high_totalram) {
 		/* convert to mask just covering totalram */
 		low_totalram = (1 << (fls(low_totalram) - 1));
-		if (!low_totalram)
-			return 0;
-
 		low_totalram += low_totalram - 1;
 		mask = low_totalram;
 	} else {

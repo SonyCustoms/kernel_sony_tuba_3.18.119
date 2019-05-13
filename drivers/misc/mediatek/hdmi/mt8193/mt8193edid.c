@@ -223,7 +223,6 @@ void vClearEdidInfo(void)
 	if (fgIsHdmiNoEDIDCheck())
 		vSetNoEdidChkInfo();
 
-	mt8193_edidstate = 0;
 
 }
 
@@ -1385,8 +1384,6 @@ void mt8193_checkedid(unsigned char i1noedid)
 		vShowEdidInformation();
 	} else
 		hdmi_show_def_info();
-
-	mt8193_edidstate = 1;
 
 }
 

@@ -166,8 +166,6 @@ static struct JpegClk gJpegClk;
 static wait_queue_head_t dec_wait_queue;
 static spinlock_t jpeg_dec_lock;
 static int dec_status;
-static int dec_ready;
-
 #endif
 
 #ifdef JPEG_PM_DOMAIN_ENABLE
@@ -179,7 +177,6 @@ struct platform_device *pjenc_dev;
 static wait_queue_head_t enc_wait_queue;
 static spinlock_t jpeg_enc_lock;
 static int enc_status;
-static int enc_ready;
 
 /* ========================================== */
 /* CMDQ */
@@ -370,7 +367,6 @@ static int jpeg_drv_dec_init(void)
 		retValue = -EBUSY;
 	} else {
 		dec_status = 1;
-		dec_ready = 0;
 		retValue = 0;
 	}
 	spin_unlock(&jpeg_dec_lock);
@@ -389,7 +385,6 @@ static void jpeg_drv_dec_deinit(void)
 
 		spin_lock(&jpeg_dec_lock);
 		dec_status = 0;
-		dec_ready = 0;
 		spin_unlock(&jpeg_dec_lock);
 
 		jpeg_drv_dec_reset();
@@ -409,7 +404,6 @@ static int jpeg_drv_enc_init(void)
 		retValue = -EBUSY;
 	} else {
 		enc_status = 1;
-		enc_ready = 0;
 		retValue = 0;
 	}
 	spin_unlock(&jpeg_enc_lock);
@@ -427,7 +421,6 @@ static void jpeg_drv_enc_deinit(void)
 	if (enc_status != 0) {
 		spin_lock(&jpeg_enc_lock);
 		enc_status = 0;
-		enc_ready = 0;
 		spin_unlock(&jpeg_enc_lock);
 
 		jpeg_drv_enc_reset();
@@ -514,12 +507,8 @@ static int jpeg_dec_ioctl(unsigned int cmd, unsigned long arg, struct file *file
 		else
 			_jpeg_dec_mode = 0;
 
-		if (jpeg_drv_dec_set_config_data(&dec_params) == 0)
+		if (jpeg_drv_dec_set_config_data(&dec_params) < 0)
 			return -EFAULT;
-
-		spin_lock(&jpeg_dec_lock);
-		dec_ready = 1;
-		spin_unlock(&jpeg_dec_lock);
 
 		break;
 
@@ -589,7 +578,7 @@ static int jpeg_dec_ioctl(unsigned int cmd, unsigned long arg, struct file *file
 			    ("[JPEGDRV]Permission Denied! This process can not access decoder\n");
 			return -EFAULT;
 		}
-		if (dec_status == 0 || dec_ready == 0) {
+		if (dec_status == 0) {
 			JPEG_MSG("[JPEGDRV]JPEG Decoder is unlocked!!");
 			*pStatus = 0;
 			return -EFAULT;
@@ -603,14 +592,10 @@ static int jpeg_dec_ioctl(unsigned int cmd, unsigned long arg, struct file *file
 			 dec_row_params.pauseMCU - 1, dec_row_params.decRowBuf[0],
 			 dec_row_params.decRowBuf[1], dec_row_params.decRowBuf[2]);
 
-		if (!jpeg_drv_dec_set_dst_bank0(dec_row_params.decRowBuf[0], dec_row_params.decRowBuf[1],
-					   dec_row_params.decRowBuf[2])) {
-			return -EFAULT;
-		}
+		jpeg_drv_dec_set_dst_bank0(dec_row_params.decRowBuf[0], dec_row_params.decRowBuf[1],
+					   dec_row_params.decRowBuf[2]);
 
-		if (!jpeg_drv_dec_set_pause_mcu_idx(dec_row_params.pauseMCU - 1))
-			return -EFAULT;
-
+		jpeg_drv_dec_set_pause_mcu_idx(dec_row_params.pauseMCU - 1);
 
 		/* lock CPU to ensure irq is enabled after trigger HW */
 		spin_lock(&jpeg_dec_lock);
@@ -619,15 +604,6 @@ static int jpeg_dec_ioctl(unsigned int cmd, unsigned long arg, struct file *file
 		break;
 
 	case JPEG_DEC_IOCTL_START:	/* OT:OK */
-		if (*pStatus != JPEG_DEC_PROCESS) {
-			JPEG_WRN("Permission Denied! This process can not access decoder");
-			return -EFAULT;
-		}
-		if (dec_status == 0 || dec_ready == 0) {
-			JPEG_WRN("Decoder status is available, HOW COULD THIS HAPPEN ??");
-			*pStatus = 0;
-			return -EFAULT;
-		}
 		/*JPEG_MSG("[JPEGDRV][IOCTL] JPEG Decoder Start!!\n");*/
 
 		jpeg_drv_dec_start();
@@ -638,7 +614,7 @@ static int jpeg_dec_ioctl(unsigned int cmd, unsigned long arg, struct file *file
 			JPEG_WRN("Permission Denied! This process can not access decoder");
 			return -EFAULT;
 		}
-		if (dec_status == 0 || dec_ready == 0) {
+		if (dec_status == 0) {
 			JPEG_WRN("Decoder status is available, HOW COULD THIS HAPPEN ??");
 			*pStatus = 0;
 			return -EFAULT;
@@ -882,10 +858,6 @@ static int jpeg_enc_ioctl(unsigned int cmd, unsigned long arg, struct file *file
 
 		jpeg_drv_enc_ctrl_cfg(cfgEnc.enableEXIF, cfgEnc.encQuality, cfgEnc.restartInterval);
 
-		spin_lock(&jpeg_enc_lock);
-		enc_ready = 1;
-		spin_unlock(&jpeg_enc_lock);
-
 		/* memset(&ctrl_cfg, 0, sizeof(JpegDrvEncCtrlCfg)); */
 		/*  */
 		/* ctrl_cfg.quality = cfgEnc.encQuality; */
@@ -900,8 +872,8 @@ static int jpeg_enc_ioctl(unsigned int cmd, unsigned long arg, struct file *file
 			JPEG_WRN("Permission Denied! This process can not access encoder");
 			return -EFAULT;
 		}
-		if (enc_status == 0 || enc_ready == 0) {
-			JPEG_WRN("Encoder status is unavailable, HOW COULD THIS HAPPEN ??");
+		if (enc_status == 0) {
+			JPEG_WRN("Encoder status is available, HOW COULD THIS HAPPEN ??");
 			*pStatus = 0;
 			return -EFAULT;
 		}
@@ -914,8 +886,8 @@ static int jpeg_enc_ioctl(unsigned int cmd, unsigned long arg, struct file *file
 			JPEG_WRN("Permission Denied! This process can not access encoder");
 			return -EFAULT;
 		}
-		if (enc_status == 0 || enc_ready == 0) {
-			JPEG_WRN("Encoder status is unavailable, HOW COULD THIS HAPPEN ??");
+		if (enc_status == 0) {
+			JPEG_WRN("Encoder status is available, HOW COULD THIS HAPPEN ??");
 			*pStatus = 0;
 			return -EFAULT;
 		}

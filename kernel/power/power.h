@@ -36,8 +36,12 @@ static inline char *check_image_kernel(struct swsusp_info *info)
 	return arch_hibernation_header_restore(info) ?
 			"architecture specific data" : NULL;
 }
+#else
+extern char *check_image_kernel(struct swsusp_info *info);
 #endif /* CONFIG_ARCH_HIBERNATION_HEADER */
+extern int init_header(struct swsusp_info *info);
 
+extern char resume_file[256];
 /*
  * Keep some memory free so that I/O operations can succeed without paging
  * [Might this be more than 4 MB?]
@@ -77,6 +81,8 @@ static struct kobj_attribute _name##_attr = {	\
 	.store	= _name##_store,		\
 }
 
+extern struct pbe *restore_pblist;
+
 /* Preferred image size in bytes (default 500 MB) */
 extern unsigned long image_size;
 /* Size of memory reserved for drivers (default SPARE_PAGES x PAGE_SIZE) */
@@ -84,6 +90,9 @@ extern unsigned long reserved_size;
 extern int in_suspend;
 extern dev_t swsusp_resume_device;
 extern sector_t swsusp_resume_block;
+
+extern asmlinkage int swsusp_arch_suspend(void);
+extern asmlinkage int swsusp_arch_resume(void);
 
 extern int create_basic_memory_bitmaps(void);
 extern void free_basic_memory_bitmaps(void);
@@ -198,8 +207,6 @@ static inline void suspend_test_finish(const char *label) {}
 
 #ifdef CONFIG_PM_SLEEP
 /* kernel/power/main.c */
-extern int __pm_notifier_call_chain(unsigned long val, int nr_to_call,
-				    int *nr_calls);
 extern int pm_notifier_call_chain(unsigned long val);
 #endif
 
@@ -320,3 +327,8 @@ extern int pm_wake_lock(const char *buf);
 extern int pm_wake_unlock(const char *buf);
 
 #endif /* !CONFIG_PM_WAKELOCKS */
+
+#ifdef CONFIG_TOI
+unsigned long toi_get_nonconflicting_page(void);
+#define BM_END_OF_MAP	(~0UL)
+#endif

@@ -174,10 +174,15 @@ int _esd_check_config_handle_vdo(cmdqRecHandle handle)
 {
 	int ret = 0;		/* 0:success , 1:fail */
 
-	/* 1.reset */
+	/* 0.reset */
 	cmdqRecReset(handle);
 
 	primary_display_manual_lock();
+
+	/* 1.wait stream eof first */
+	cmdqRecWait(handle, CMDQ_EVENT_DISP_RDMA0_EOF);
+	cmdqRecWait(handle, CMDQ_EVENT_MUTEX0_STREAM_EOF);
+
 	/* 2.stop dsi vdo mode */
 	dpmgr_path_build_cmdq(primary_get_dpmgr_handle(), handle, CMDQ_STOP_VDO_MODE,
 			      0);

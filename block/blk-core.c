@@ -11,6 +11,9 @@
 /*
  * This handles all read/write requests to block devices
  */
+#if defined(CONFIG_MT_ENG_BUILD)
+#define DEBUG 1
+#endif
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/backing-dev.h>
@@ -40,8 +43,6 @@
 #include "blk-cgroup.h"
 #include "blk-mq.h"
 
-#include <linux/math64.h>
-
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_complete);
@@ -49,6 +50,9 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(block_split);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_unplug);
 
 DEFINE_IDA(blk_queue_ida);
+
+int trap_non_toi_io;
+EXPORT_SYMBOL_GPL(trap_non_toi_io);
 
 /*
  * For the allocated request tables
@@ -196,7 +200,7 @@ EXPORT_SYMBOL(blk_delay_queue);
  **/
 void blk_start_queue(struct request_queue *q)
 {
-	WARN_ON(!in_interrupt() && !irqs_disabled());
+	WARN_ON(!irqs_disabled());
 
 	queue_flag_clear(QUEUE_FLAG_STOPPED, q);
 	__blk_run_queue(q);
@@ -283,9 +287,20 @@ inline void __blk_run_queue_uncond(struct request_queue *q)
 	 * number of active request_fn invocations such that blk_drain_queue()
 	 * can wait until all these request_fn calls have finished.
 	 */
-	q->request_fn_active++;
-	q->request_fn(q);
-	q->request_fn_active--;
+
+	if (!q->notified_urgent &&
+		q->elevator->type->ops.elevator_is_urgent_fn &&
+		q->urgent_request_fn &&
+		q->elevator->type->ops.elevator_is_urgent_fn(q)) {
+		q->notified_urgent = true;
+		q->request_fn_active++;
+		q->urgent_request_fn(q);
+		q->request_fn_active--;
+	} else {
+		q->request_fn_active++;
+		q->request_fn(q);
+		q->request_fn_active--;
+	}
 }
 
 /**
@@ -295,6 +310,12 @@ inline void __blk_run_queue_uncond(struct request_queue *q)
  * Description:
  *    See @blk_run_queue. This variant must be called with the queue lock
  *    held and interrupts disabled.
+ *    Device driver will be notified of an urgent request
+ *    pending under the following conditions:
+ *    1. The driver and the current scheduler support urgent reques handling
+ *    2. There is an urgent request pending in the scheduler
+ *    3. There isn't already an urgent request in flight, meaning previously
+ *       notified urgent request completed (!q->notified_urgent)
  */
 void __blk_run_queue(struct request_queue *q)
 {
@@ -1276,9 +1297,73 @@ void blk_requeue_request(struct request_queue *q, struct request *rq)
 
 	BUG_ON(blk_queued_rq(rq));
 
+	if (rq->cmd_flags & REQ_URGENT) {
+		/*
+		 * It's not compliant with the design to re-insert
+		 * urgent requests. We want to be able to track this
+		 * down.
+		 */
+		pr_err("%s(): requeueing an URGENT request", __func__);
+		WARN_ON(!q->dispatched_urgent);
+		q->dispatched_urgent = false;
+	}
 	elv_requeue_request(q, rq);
 }
 EXPORT_SYMBOL(blk_requeue_request);
+
+/**
+ * blk_reinsert_request() - Insert a request back to the scheduler
+ * @q:		request queue
+ * @rq:		request to be inserted
+ *
+ * This function inserts the request back to the scheduler as if
+ * it was never dispatched.
+ *
+ * Return: 0 on success, error code on fail
+ */
+int blk_reinsert_request(struct request_queue *q, struct request *rq)
+{
+	if (unlikely(!rq) || unlikely(!q))
+		return -EIO;
+
+	blk_delete_timer(rq);
+	blk_clear_rq_complete(rq);
+	trace_block_rq_requeue(q, rq);
+
+	if (rq->cmd_flags & REQ_QUEUED)
+		blk_queue_end_tag(q, rq);
+
+	BUG_ON(blk_queued_rq(rq));
+	if (rq->cmd_flags & REQ_URGENT) {
+		/*
+		 * It's not compliant with the design to re-insert
+		 * urgent requests. We want to be able to track this
+		 * down.
+		 */
+		pr_err("%s(): reinserting an URGENT request", __func__);
+		WARN_ON(!q->dispatched_urgent);
+		q->dispatched_urgent = false;
+	}
+
+	return elv_reinsert_request(q, rq);
+}
+EXPORT_SYMBOL(blk_reinsert_request);
+
+/**
+ * blk_reinsert_req_sup() - check whether the scheduler supports
+ *          reinsertion of requests
+ * @q:		request queue
+ *
+ * Returns true if the current scheduler supports reinserting
+ * request. False otherwise
+ */
+bool blk_reinsert_req_sup(struct request_queue *q)
+{
+	if (unlikely(!q))
+		return false;
+	return q->elevator->type->ops.elevator_reinsert_req_fn ? true : false;
+}
+EXPORT_SYMBOL(blk_reinsert_req_sup);
 
 static void add_acct_request(struct request_queue *q, struct request *rq,
 			     int where)
@@ -1933,6 +2018,9 @@ void submit_bio(int rw, struct bio *bio)
 {
 	bio->bi_rw |= rw;
 
+	if (unlikely(trap_non_toi_io))
+		BUG_ON(!(bio->bi_flags & BIO_TOI));
+
 	/*
 	 * If it's a regular read/write or a barrier with data attached,
 	 * go through the normal accounting stuff before submission.
@@ -2241,6 +2329,10 @@ struct request *blk_peek_request(struct request_queue *q)
 			 * not be passed by new incoming requests
 			 */
 			rq->cmd_flags |= REQ_STARTED;
+			if (rq->cmd_flags & REQ_URGENT) {
+				WARN_ON(q->dispatched_urgent);
+				q->dispatched_urgent = true;
+			}
 			trace_block_rq_issue(q, rq);
 		}
 
@@ -3329,51 +3421,3 @@ int __init blk_dev_init(void)
 	return 0;
 }
 
-/*
- * Blk IO latency support. We want this to be as cheap as possible, so doing
- * this lockless (and avoiding atomics), a few off by a few errors in this
- * code is not harmful, and we don't want to do anything that is
- * perf-impactful.
- * TODO : If necessary, we can make the histograms per-cpu and aggregate
- * them when printing them out.
- */
-ssize_t
-blk_latency_hist_show(char* name, struct io_latency_state *s, char *buf,
-		int buf_size)
-{
-	int i;
-	int bytes_written = 0;
-	u_int64_t num_elem, elem;
-	int pct;
-	u_int64_t average;
-
-       num_elem = s->latency_elems;
-       if (num_elem > 0) {
-	       average = div64_u64(s->latency_sum, s->latency_elems);
-	       bytes_written += scnprintf(buf + bytes_written,
-			       buf_size - bytes_written,
-			       "IO svc_time %s Latency Histogram (n = %llu,"
-			       " average = %llu):\n", name, num_elem, average);
-	       for (i = 0;
-		    i < ARRAY_SIZE(latency_x_axis_us);
-		    i++) {
-		       elem = s->latency_y_axis[i];
-		       pct = div64_u64(elem * 100, num_elem);
-		       bytes_written += scnprintf(buf + bytes_written,
-				       PAGE_SIZE - bytes_written,
-				       "\t< %6lluus%15llu%15d%%\n",
-				       latency_x_axis_us[i],
-				       elem, pct);
-	       }
-	       /* Last element in y-axis table is overflow */
-	       elem = s->latency_y_axis[i];
-	       pct = div64_u64(elem * 100, num_elem);
-	       bytes_written += scnprintf(buf + bytes_written,
-			       PAGE_SIZE - bytes_written,
-			       "\t>=%6lluus%15llu%15d%%\n",
-			       latency_x_axis_us[i - 1], elem, pct);
-	}
-
-	return bytes_written;
-}
-EXPORT_SYMBOL(blk_latency_hist_show);

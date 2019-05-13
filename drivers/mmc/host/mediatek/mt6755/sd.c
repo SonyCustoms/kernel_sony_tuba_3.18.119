@@ -148,7 +148,6 @@ bool sdio_lock_dvfs;
 
 u8 g_emmc_id;
 unsigned int cd_gpio = 0;
-unsigned int cd_debounce;
 
 struct msdc_host *mtk_msdc_host[] = { NULL, NULL, NULL, NULL};
 EXPORT_SYMBOL(mtk_msdc_host);
@@ -266,9 +265,6 @@ int msdc_rsp[] = {
 
 #define pr_reg(OFFSET, VAL)     \
 	pr_err("%d R[%x]=0x%.8x", id, OFFSET, VAL)
-
-static void msdc_init_hw(struct msdc_host *host);
-static void msdc_ops_set_ios(struct mmc_host *mmc, struct mmc_ios *ios);
 
 static u16 msdc_offsets[] = {
 	OFFSET_MSDC_CFG,
@@ -455,50 +451,6 @@ int msdc_get_dma_status(int host_id)
 	return result;
 }
 EXPORT_SYMBOL(msdc_get_dma_status);
-
-void msdc_hang_detect_dump(u32 id)
-{
-	struct msdc_host *host = mtk_msdc_host[id];
-	void __iomem *base;
-
-	if (host == NULL) {
-		pr_err("====== Null msdc%d, dump skipped ======\n", id);
-		return;
-	}
-
-	pr_err("====== msdc%d dump start ======\n", id);
-
-	pr_err("Accumulated dma cnt: %u\n", host->dma_cnt);
-	if (host->start_dma_time < host->stop_dma_time)
-		pr_err("No pending dma: last start %llu, last stop %llu\n",
-			host->start_dma_time, host->stop_dma_time);
-
-	if (host->async_tuning_in_progress || host->legacy_tuning_in_progress)
-		pr_err("async_tuning_in_progress %d, legacy_tuning_in_progress %d\n",
-			host->async_tuning_in_progress,
-			host->legacy_tuning_in_progress);
-
-	if ((host->core_clkon == 0)
-	 && host->stop_dma_time
-	 && (host->start_dma_time > host->stop_dma_time)) {
-		pr_err("DMA pending with clock gated: last start %llu, last stop %llu\n",
-			host->start_dma_time, host->stop_dma_time);
-		msdc_dump_clock_sts();
-		return;
-	}
-
-	base = host->base;
-
-	if ((host->core_clkon == 1)
-	 && (host->start_dma_time > host->stop_dma_time)) {
-		pr_err("DMA pending DMA_CFG_SATUS(%d): last start %llu, last stop %llu\n",
-			MSDC_READ32(MSDC_DMA_CFG) & MSDC_DMA_CFG_STS,
-			host->start_dma_time, host->stop_dma_time);
-	}
-
-	pr_err("======= msdc%d dump end =======\n", id);
-}
-EXPORT_SYMBOL(msdc_hang_detect_dump);
 
 void msdc_clr_fifo(unsigned int id)
 {
@@ -1227,19 +1179,10 @@ static void msdc_card_reset(struct mmc_host *mmc)
 	*/
 	struct msdc_host *host = mmc_priv(mmc);
 
-	/* Attention: reset will clear WP status */
-	if (mmc->caps & MMC_CAP_HW_RESET) {
-		msdc_pin_reset(host, MSDC_PIN_PULL_DOWN, 1);
-		udelay(2);
-		msdc_pin_reset(host, MSDC_PIN_PULL_UP, 1);
-		usleep_range(200, 500);
-	}
-
-	mmc->ios.timing = MMC_TIMING_LEGACY;
-	mmc->ios.clock = 260000;
-	msdc_ops_set_ios(mmc, &mmc->ios);
-
-	msdc_init_hw(host);
+	msdc_pin_reset(host, MSDC_PIN_PULL_DOWN, 1);
+	udelay(2);
+	msdc_pin_reset(host, MSDC_PIN_PULL_UP, 1);
+	usleep_range(200, 500);
 }
 
 static void msdc_set_power_mode(struct msdc_host *host, u8 mode)
@@ -1914,7 +1857,7 @@ static u32 msdc_command_resp_polling(struct msdc_host *host,
 			break;
 		}
 
-		if (time_after(jiffies, tmo) && ((MSDC_READ32(MSDC_INT) & cmdsts) == 0)) {
+		if (time_after(jiffies, tmo)) {
 			pr_err("[%s]: msdc%d CMD<%d> polling_for_completion timeout ARG<0x%.8x>",
 				__func__, host->id, cmd->opcode, cmd->arg);
 			cmd->error = (unsigned int)-ETIMEDOUT;
@@ -2112,7 +2055,7 @@ static unsigned int msdc_cmdq_command_start(struct msdc_host *host,
 		if (!sdc_is_cmd_busy())
 			break;
 
-		if (time_after(jiffies, tmo) && sdc_is_cmd_busy()) {
+		if (time_after(jiffies, tmo)) {
 			ERR_MSG("[%s]: XXX cmd_busy timeout: before CMD<%d>",
 				__func__ , opcode);
 			cmd->error = (unsigned int)-ETIMEDOUT;
@@ -2158,7 +2101,7 @@ static unsigned int msdc_cmdq_command_resp_polling(struct msdc_host *host,
 			break;
 		}
 
-		if (time_after(jiffies, tmo) && ((MSDC_READ32(MSDC_INT) & cmdsts) == 0)) {
+		if (time_after(jiffies, tmo)) {
 			pr_err("[%s]: msdc%d CMD<%d> polling_for_completion timeout ARG<0x%.8x>",
 				__func__, host->id, cmd->opcode, cmd->arg);
 			cmd->error = (unsigned int)-ETIMEDOUT;
@@ -2668,18 +2611,16 @@ static void msdc_dma_start(struct msdc_host *host)
 	MSDC_SET_BIT32(MSDC_INTEN, wints);
 
 	N_MSG(DMA, "DMA start");
-
-	/* schedule timeout worker */
-	host->data_timeout_ms = 30 * 1000;
-	schedule_delayed_work(&host->data_timeout,
-		msecs_to_jiffies(host->data_timeout_ms));
-	N_MSG(DMA, "DMA Data Busy Timeout:%u ms, schedule_delayed_work",
-		host->data_timeout_ms);
-
-	host->dma_cnt++;
-	host->start_dma_time = sched_clock();
-	host->stop_dma_time = 0;
-	mb();
+	/* Schedule delayed work to check if data0 keeps busy */
+	if (host->data && (host->data->flags & MMC_DATA_WRITE)) {
+		host->write_timeout_ms = min_t(u32, max_t(u32,
+			host->data->blocks * 500,
+			host->data->timeout_ns / 1000000), 10 * 1000);
+		schedule_delayed_work(&host->write_timeout,
+			msecs_to_jiffies(host->write_timeout_ms));
+		N_MSG(DMA, "DMA Data Busy Timeout:%u ms, schedule_delayed_work",
+			host->write_timeout_ms);
+	}
 }
 
 static void msdc_dma_stop(struct msdc_host *host)
@@ -2691,10 +2632,12 @@ static void msdc_dma_stop(struct msdc_host *host)
 		| MSDC_INTEN_DATCRCERR;
 
 	/* Clear DMA data busy timeout */
-	cancel_delayed_work(&host->data_timeout);
-	N_MSG(DMA, "DMA Data Busy Timeout:%u ms, cancel_delayed_work",
-		host->data_timeout_ms);
-	host->data_timeout_ms = 0; /* clear timeout */
+	if (host->data && (host->data->flags & MMC_DATA_WRITE)) {
+		cancel_delayed_work(&host->write_timeout);
+		N_MSG(DMA, "DMA Data Busy Timeout:%u ms, cancel_delayed_work",
+			host->write_timeout_ms);
+		host->write_timeout_ms = 0; /* clear timeout */
+	}
 
 	/* handle autocmd12 error in msdc_irq */
 	if (host->autocmd & MSDC_AUTOCMD12)
@@ -4652,7 +4595,6 @@ static void msdc_async_tune(struct work_struct *work)
 int msdc_execute_tuning(struct mmc_host *mmc, u32 opcode)
 {
 	struct msdc_host *host = mmc_priv(mmc);
-	int ret = 0;
 
 	host->legacy_tuning_in_progress = true;
 	/*host->async_tuning_in_progress = true;*/
@@ -4686,18 +4628,18 @@ int msdc_execute_tuning(struct mmc_host *mmc, u32 opcode)
 		if (mmc->ios.timing == MMC_TIMING_MMC_HS200) {
 			if (opcode == MMC_SEND_STATUS) {
 				pr_err("[AUTOK]eMMC HS200 Tune CMD only\n");
-				ret = hs200_execute_tuning_cmd(host, NULL);
+				hs200_execute_tuning_cmd(host, NULL);
 			} else {
 				pr_err("[AUTOK]eMMC HS200 Tune\n");
-				ret = hs200_execute_tuning(host, NULL);
+				hs200_execute_tuning(host, NULL);
 			}
 		} else if (mmc->ios.timing == MMC_TIMING_MMC_HS400) {
 			if (opcode == MMC_SEND_STATUS) {
 				pr_err("[AUTOK]eMMC HS400 Tune CMD only\n");
-				ret = hs400_execute_tuning_cmd(host, NULL);
+				hs400_execute_tuning_cmd(host, NULL);
 			} else {
 				pr_err("[AUTOK]eMMC HS400 Tune\n");
-				ret = hs400_execute_tuning(host, NULL);
+				hs400_execute_tuning(host, NULL);
 			}
 		}
 	} else if (host->hw->host_function == MSDC_SDIO) {
@@ -4785,8 +4727,7 @@ int msdc_execute_tuning(struct mmc_host *mmc, u32 opcode)
 
 	msdc_gate_clock(host, 1);
 
-	/* return error to reset emmc when timeout occurs during autok */
-	return ret;
+	return 0;
 }
 
 static void msdc_ops_request(struct mmc_host *mmc, struct mmc_request *mrq)
@@ -5266,10 +5207,10 @@ static int msdc_card_busy(struct mmc_host *mmc)
 
 /* Add this function to check if no interrupt back after write.         *
  * It may occur when write crc revice, but busy over data->timeout_ns   */
-static void msdc_check_data_timeout(struct work_struct *work)
+static void msdc_check_write_timeout(struct work_struct *work)
 {
 	struct msdc_host *host =
-		container_of(work, struct msdc_host, data_timeout.work);
+		container_of(work, struct msdc_host, write_timeout.work);
 	void __iomem *base = host->base;
 	struct mmc_data  *data = host->data;
 	struct mmc_request *mrq = host->mrq;
@@ -5280,23 +5221,15 @@ static void msdc_check_data_timeout(struct work_struct *work)
 	u32 err = 0;
 	unsigned long tmo;
 
-	if (!data || !mrq || !mmc) {
-		pr_notice("[%s]: data = 0x%p, mrq = 0x%p, mmc = 0x%p, return\n",
-			__func__, data, mrq, mmc);
+	if (!data || !mrq || !mmc)
 		return;
-	}
 
-	pr_notice("[%s]: XXX DMA Data Busy Timeout: %u ms, CMD<%d>",
-		__func__, host->data_timeout_ms, mrq->cmd->opcode);
+	pr_err("[%s]: XXX DMA Data Write Busy Timeout: %u ms, CMD<%d>",
+		__func__, host->write_timeout_ms, mrq->cmd->opcode);
 
-	msdc_hang_detect_dump(host->id);
-	msdc_dump_info(host->id);
-#ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-	mmc_cmd_dump(host->mmc);
-#endif
+	if (msdc_use_async_dma(data->host_cookie) && (host->tune == 0)) {
+		msdc_dump_info(host->id);
 
-	if ((msdc_use_async_dma(data->host_cookie)) &&
-	    (!host->async_tuning_in_progress)) {
 		msdc_dma_stop(host);
 		msdc_dma_clear(host);
 		msdc_reset_hw(host->id);
@@ -5330,8 +5263,7 @@ static void msdc_check_data_timeout(struct work_struct *work)
 				ERR_MSG("abort timeout and stuck in %d state, remove such bad card!",
 					state);
 				spin_unlock(&host->lock);
-				if (host->hw->host_function == MSDC_SD)
-					msdc_set_bad_card_and_remove(host);
+				msdc_set_bad_card_and_remove(host);
 				spin_lock(&host->lock);
 				break;
 			}
@@ -6045,7 +5977,7 @@ static int msdc_drv_probe(struct platform_device *pdev)
 		tasklet_init(&host->flush_cache_tasklet,
 			msdc_tasklet_flush_cache, (ulong) host);
 #endif
-	INIT_DELAYED_WORK(&host->data_timeout, msdc_check_data_timeout);
+	INIT_DELAYED_WORK(&host->write_timeout, msdc_check_write_timeout);
 	INIT_DELAYED_WORK(&host->work_init, msdc_add_host);
 
 	/*INIT_DELAYED_WORK(&host->remove_card, msdc_remove_card);*/

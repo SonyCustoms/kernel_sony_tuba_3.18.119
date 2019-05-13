@@ -1,14 +1,3 @@
-/*
-* Copyright (C) 2016 MediaTek Inc.
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
-*/
-
 #include <linux/spinlock.h>
 #include <linux/errno.h>
 #include <linux/module.h>
@@ -142,7 +131,7 @@ void reset_watchpoint(void)
 	int j;
 	int i;
 	unsigned int args;
-#if defined(CONFIG_ARCH_MT6580) || defined(CONFIG_ARCH_MT6570)
+#ifdef CONFIG_ARCH_MT6580
 	int offset = 2;
 #else
 	int offset = 4;
@@ -212,7 +201,7 @@ int add_hw_watchpoint(struct wp_event *wp_event)
 	int ret, i, j;
 	unsigned long flags;
 	unsigned int ctl;
-#if defined(CONFIG_ARCH_MT6580) || defined(CONFIG_ARCH_MT6570)
+#ifdef CONFIG_ARCH_MT6580
 	int offset = 2;
 #else
 	int offset = 4;
@@ -287,7 +276,7 @@ int del_hw_watchpoint(struct wp_event *wp_event)
 {
 	unsigned long flags;
 	int i, j;
-#if defined(CONFIG_ARCH_MT6580) || defined(CONFIG_ARCH_MT6570)
+#ifdef CONFIG_ARCH_MT6580
 	int offset = 2;
 #else
 	int offset = 4;
@@ -331,7 +320,7 @@ static int watchpoint_handler(unsigned long addr, unsigned int esr, struct pt_re
 {
 	unsigned long wfar, daddr, iaddr;
 	int i, j, ret;
-#if defined(CONFIG_ARCH_MT6580) || defined(CONFIG_ARCH_MT6570)
+#ifdef CONFIG_ARCH_MT6580
 	int offset = 2;
 #else
 	int offset = 4;

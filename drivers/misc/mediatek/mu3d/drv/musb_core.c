@@ -137,17 +137,17 @@ const char musb_driver_name[] = MUSB_DRIVER_NAME;
 struct musb *_mu3d_musb = NULL;
 
 
-int debug_level = K_ALET | K_CRIT | K_ERR | K_WARNIN /* | K_NOTICE | K_INFO */;
-int fake_CDP = 0;
+u32 debug_level = K_ALET | K_CRIT | K_ERR | K_WARNIN;
+u32 fake_CDP = 0;
 
-module_param(debug_level, int, 0400);
+module_param(debug_level, int, 0644);
 MODULE_PARM_DESC(debug_level, "Debug Print Log Lvl");
-module_param(fake_CDP, int, 0400);
+module_param(fake_CDP, int, 0644);
 
 #ifdef EP_PROFILING
-int is_prof = 1;
+u32 is_prof = 1;
 
-module_param(is_prof, int, 0400);
+module_param(is_prof, int, 0644);
 MODULE_PARM_DESC(is_prof, "profiling each EP");
 #endif
 
@@ -169,7 +169,7 @@ unsigned int musb_speed = 0;
 #else
 unsigned int musb_speed = 1;
 #endif
-module_param_named(speed, musb_speed, uint, 0644);
+module_param_named(speed, musb_speed, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(debug, "USB speed configuration. default = 1, spuper speed.");
 #endif
 
@@ -1002,9 +1002,6 @@ void musb_start(struct musb *musb)
 		mu3d_hal_u2dev_connect();
 #endif
 	}
-#ifdef CONFIG_DUAL_ROLE_USB_INTF
-	mt_usb_dual_role_to_device();
-#endif
 }
 
 
@@ -1058,10 +1055,6 @@ static void set_ssusb_ip_sleep(struct musb *musb)
 void musb_stop(struct musb *musb)
 {
 	os_printk(K_INFO, "musb_stop\n");
-
-#ifdef CONFIG_DUAL_ROLE_USB_INTF
-	mt_usb_dual_role_to_none();
-#endif
 
 	/* stop IRQs, timers, ... */
 	musb_platform_disable(musb);
@@ -1155,12 +1148,30 @@ static void musb_shutdown(struct platform_device *pdev)
 	|| defined(CONFIG_USB_MUSB_OMAP2PLUS_MODULE)	\
 	|| defined(CONFIG_USB_MUSB_AM35X)		\
 	|| defined(CONFIG_USB_MUSB_AM35X_MODULE)
+
+#ifdef CONFIG_USBIF_COMPLIANCE
 static ushort fifo_mode = 4;
+#else
+static ushort __initdata fifo_mode = 4;
+#endif
+
 #elif defined(CONFIG_USB_MUSB_UX500)			\
 	|| defined(CONFIG_USB_MUSB_UX500_MODULE)
+
+#ifdef CONFIG_USBIF_COMPLIANCE
 static ushort fifo_mode = 5;
 #else
+static ushort __initdata fifo_mode = 5;
+#endif
+
+#else
+
+#ifdef CONFIG_USBIF_COMPLIANCE
 static ushort fifo_mode = 2;
+#else
+static ushort __initdata fifo_mode = 2;
+#endif
+
 #endif
 
 /* "modprobe ... fifo_mode=1" etc */
@@ -1173,7 +1184,11 @@ MODULE_PARM_DESC(fifo_mode, "initial endpoint configuration");
  */
 
 /* mode 0 - fits in 2KB */
+#ifdef CONFIG_USBIF_COMPLIANCE
 static struct musb_fifo_cfg mode_0_cfg[] = {
+#else
+static struct musb_fifo_cfg mode_0_cfg[] __initdata = {
+#endif
 	{.hw_ep_num = 1, .style = FIFO_TX, .maxpacket = 512,},
 	{.hw_ep_num = 1, .style = FIFO_RX, .maxpacket = 512,},
 	{.hw_ep_num = 2, .style = FIFO_RXTX, .maxpacket = 512,},
@@ -1182,7 +1197,11 @@ static struct musb_fifo_cfg mode_0_cfg[] = {
 };
 
 /* mode 1 - fits in 4KB */
+#ifdef CONFIG_USBIF_COMPLIANCE
 static struct musb_fifo_cfg mode_1_cfg[] = {
+#else
+static struct musb_fifo_cfg mode_1_cfg[] __initdata = {
+#endif
 	{.hw_ep_num = 1, .style = FIFO_TX, .maxpacket = 512, .mode = BUF_DOUBLE,},
 	{.hw_ep_num = 1, .style = FIFO_RX, .maxpacket = 512, .mode = BUF_DOUBLE,},
 	{.hw_ep_num = 2, .style = FIFO_RXTX, .maxpacket = 512, .mode = BUF_DOUBLE,},
@@ -1191,7 +1210,11 @@ static struct musb_fifo_cfg mode_1_cfg[] = {
 };
 
 /* mode 2 - fits in 4KB */
+#ifdef CONFIG_USBIF_COMPLIANCE
 static struct musb_fifo_cfg mode_2_cfg[] = {
+#else
+static struct musb_fifo_cfg mode_2_cfg[] __initdata = {
+#endif
 	{.hw_ep_num = 1, .style = FIFO_TX, .maxpacket = 512,},
 	{.hw_ep_num = 1, .style = FIFO_RX, .maxpacket = 512,},
 	{.hw_ep_num = 2, .style = FIFO_TX, .maxpacket = 512,},
@@ -1201,7 +1224,11 @@ static struct musb_fifo_cfg mode_2_cfg[] = {
 };
 
 /* mode 3 - fits in 4KB */
+#ifdef CONFIG_USBIF_COMPLIANCE
 static struct musb_fifo_cfg mode_3_cfg[] = {
+#else
+static struct musb_fifo_cfg mode_3_cfg[] __initdata = {
+#endif
 	{.hw_ep_num = 1, .style = FIFO_TX, .maxpacket = 512, .mode = BUF_DOUBLE,},
 	{.hw_ep_num = 1, .style = FIFO_RX, .maxpacket = 512, .mode = BUF_DOUBLE,},
 	{.hw_ep_num = 2, .style = FIFO_TX, .maxpacket = 512,},
@@ -1211,7 +1238,11 @@ static struct musb_fifo_cfg mode_3_cfg[] = {
 };
 
 /* mode 4 - fits in 16KB */
+#ifdef CONFIG_USBIF_COMPLIANCE
 static struct musb_fifo_cfg mode_4_cfg[] = {
+#else
+static struct musb_fifo_cfg mode_4_cfg[] __initdata = {
+#endif
 	{.hw_ep_num = 1, .style = FIFO_TX, .maxpacket = 512,},
 	{.hw_ep_num = 1, .style = FIFO_RX, .maxpacket = 512,},
 	{.hw_ep_num = 2, .style = FIFO_TX, .maxpacket = 512,},
@@ -1242,7 +1273,11 @@ static struct musb_fifo_cfg mode_4_cfg[] = {
 };
 
 /* mode 5 - fits in 8KB */
+#ifdef CONFIG_USBIF_COMPLIANCE
 static struct musb_fifo_cfg mode_5_cfg[] = {
+#else
+static struct musb_fifo_cfg mode_5_cfg[] __initdata = {
+#endif
 	{.hw_ep_num = 1, .style = FIFO_TX, .maxpacket = 512,},
 	{.hw_ep_num = 1, .style = FIFO_RX, .maxpacket = 512,},
 	{.hw_ep_num = 2, .style = FIFO_TX, .maxpacket = 512,},
@@ -1298,8 +1333,13 @@ void ep0_setup(struct musb *musb, struct musb_hw_ep *hw_ep0, const struct musb_f
  *
  * returns negative errno or offset for next fifo.
  */
+#ifdef CONFIG_USBIF_COMPLIANCE
 static int fifo_setup(struct musb *musb, struct musb_hw_ep *hw_ep, const struct musb_fifo_cfg *cfg,
 		      u16 offset)
+#else
+static int __init
+fifo_setup(struct musb *musb, struct musb_hw_ep *hw_ep, const struct musb_fifo_cfg *cfg, u16 offset)
+#endif
 {
 	u16 maxpacket = cfg->maxpacket;
 	/* u16   c_off = offset >> 3; */
@@ -1368,7 +1408,11 @@ struct musb_fifo_cfg ep0_cfg_u2 = {
 	.style = FIFO_RXTX, .maxpacket = 64,
 };
 
+#ifdef CONFIG_USBIF_COMPLIANCE
 static int ep_config_from_table(struct musb *musb)
+#else
+static int __init ep_config_from_table(struct musb *musb)
+#endif
 {
 	const struct musb_fifo_cfg *cfg;
 	unsigned i, n;
@@ -1512,7 +1556,11 @@ enum { MUSB_CONTROLLER_MHDRC, MUSB_CONTROLLER_HDRC, };
 /* Initialize MUSB (M)HDRC part of the USB hardware subsystem;
  * configure endpoints, or take their config from silicon
  */
+#ifdef CONFIG_USBIF_COMPLIANCE
 static int musb_core_init(u16 musb_type, struct musb *musb)
+#else
+static int __init musb_core_init(u16 musb_type, struct musb *musb)
+#endif
 {
 	/* u8 reg; */
 	/* char *type; */
@@ -2048,8 +2096,13 @@ static struct typec_switch_data switch_driver = {
 /* --------------------------------------------------------------------------
  * Init support
  */
+#ifdef CONFIG_USBIF_COMPLIANCE
 static struct musb *allocate_instance(struct device *dev,
 				      struct musb_hdrc_config *config, void __iomem *mbase)
+#else
+static struct musb *__init
+allocate_instance(struct device *dev, struct musb_hdrc_config *config, void __iomem *mbase)
+#endif
 {
 	struct musb *musb;
 	struct musb_hw_ep *ep;
@@ -2165,7 +2218,11 @@ static void musb_free(struct musb *musb)
  * @mregs: virtual address of controller registers,
  *	not yet corrected for platform-specific offsets
  */
+#ifdef CONFIG_USBIF_COMPLIANCE
 static int musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
+#else
+static int __init musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
+#endif
 {
 	int status;
 	struct musb *musb;
@@ -2261,12 +2318,10 @@ static int musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl
 		goto fail3;
 
 #ifdef CONFIG_USB_C_SWITCH
-#ifndef CONFIG_TCPC_CLASS
 	switch_driver.priv_data = musb;
 	status = register_typec_switch_callback(&switch_driver);
 	if (status < 0)
 		goto fail3;
-#endif
 #endif
 
 	/* REVISIT-J: Do _NOT_ support OTG functionality */
@@ -2351,13 +2406,6 @@ static int musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl
 		), ctrl, (is_dma_capable() && musb->dma_controller)
 		? "DMA" : "PIO", musb->nIrq);
 
-	/* only enable on iddig mode */
-#ifndef CONFIG_USB_C_SWITCH
-#ifdef CONFIG_DUAL_ROLE_USB_INTF
-	mt_usb_dual_role_init(musb);
-#endif
-#endif
-
 	return 0;
 
 fail5:
@@ -2418,9 +2466,11 @@ end:
  */
 #ifdef CONFIG_USBIF_COMPLIANCE
 static int mu3d_normal_driver_on;
-#endif
 
 static int musb_probe(struct platform_device *pdev)
+#else
+static int __init musb_probe(struct platform_device *pdev)
+#endif
 {
 	struct device *dev = &pdev->dev;
 	int irq = platform_get_irq_byname(pdev, MUSB_DRIVER_NAME);
@@ -2850,61 +2900,6 @@ static struct platform_driver musb_driver = {
 	.remove = musb_remove,
 	.shutdown = musb_shutdown,
 };
-
-static int usb_test_wakelock_inited;
-static struct wake_lock usb_test_wakelock;
-int mu3d_force_on;
-static int set_mu3d_force_on(const char *val, const struct kernel_param *kp)
-{
-	int option;
-	int rv;
-
-	rv = kstrtoint(val, 10, &option);
-	if (rv != 0)
-		return rv;
-
-	os_printk(K_WARNIN, "mu3d_force_on:%d, option:%d\n", mu3d_force_on, option);
-	if (option == 0 || option == 1) {
-		os_printk(K_WARNIN, "update to %d\n", option);
-		mu3d_force_on = option;
-	}
-
-	switch (option) {
-	case 2:
-		os_printk(K_WARNIN, "trigger reconnect\n");
-		mt_usb_connect();
-		break;
-	case 3:
-		os_printk(K_WARNIN, "start connect test\n");
-		mt_usb_connect_test(1);
-		break;
-	case 4:
-		os_printk(K_WARNIN, "stop connect test\n");
-		mt_usb_connect_test(0);
-		break;
-	case 5:
-		os_printk(K_WARNIN, "wake_lock usb_test_wakelock\n");
-		if (!usb_test_wakelock_inited) {
-			os_printk(K_WARNIN, "%s wake_lock_init\n", __func__);
-			wake_lock_init(&usb_test_wakelock, WAKE_LOCK_SUSPEND, "usb.test.lock");
-			usb_test_wakelock_inited = 1;
-		}
-		wake_lock(&usb_test_wakelock);
-		break;
-	case 6:
-		os_printk(K_WARNIN, "wake_unlock usb_test_wakelock\n");
-		wake_unlock(&usb_test_wakelock);
-		break;
-	default:
-		break;
-	}
-	return 0;
-}
-static struct kernel_param_ops mu3d_force_on_param_ops = {
-	.set = set_mu3d_force_on,
-	.get = param_get_int,
-};
-module_param_cb(mu3d_force_on, &mu3d_force_on_param_ops, &mu3d_force_on, 0400);
 
 /*-------------------------------------------------------------------------*/
 #ifdef CONFIG_USBIF_COMPLIANCE

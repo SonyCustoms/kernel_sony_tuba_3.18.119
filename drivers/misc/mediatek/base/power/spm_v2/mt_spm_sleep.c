@@ -67,11 +67,7 @@
 #else
 #define SPM_PWAKE_EN            1
 #define SPM_PCMWDT_EN           1
-#if defined(CONFIG_ARCH_MT6755)
-#define SPM_BYPASS_SYSPWREQ     1
-#else
 #define SPM_BYPASS_SYSPWREQ     0
-#endif
 #endif
 
 #ifdef CONFIG_OF
@@ -486,7 +482,7 @@ struct spm_lp_scen __spm_suspend = {
 static void spm_suspend_pre_process(struct pwr_ctrl *pwrctrl)
 {
 #if !defined(CONFIG_FPGA_EARLY_PORTING)
-	unsigned int temp = 0;
+	unsigned int temp;
 #endif
 
 	__spm_pmic_low_iq_mode(1);
@@ -502,7 +498,6 @@ static void spm_suspend_pre_process(struct pwr_ctrl *pwrctrl)
 
 	/* set PMIC WRAP table for suspend power control */
 #if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
-#if !defined(CONFIG_FPGA_EARLY_PORTING)
 	pmic_read_interface_nolock(PMIC_LDO_VSRAM_PROC_EN_ADDR, &temp, 0xFFFF, 0);
 	mt_spm_pmic_wrap_set_cmd(PMIC_WRAP_PHASE_SUSPEND,
 			IDX_SP_VSRAM_PWR_ON,
@@ -517,7 +512,6 @@ static void spm_suspend_pre_process(struct pwr_ctrl *pwrctrl)
 	mt_spm_pmic_wrap_set_cmd(PMIC_WRAP_PHASE_SUSPEND,
 			IDX_SP_VPROC_SHUTDOWN,
 			temp & ~(1 << PMIC_BUCK_VPROC_EN_SHIFT));
-#endif
 #else
 	pmic_read_interface_nolock(MT6351_PMIC_RG_VSRAM_PROC_EN_ADDR, &temp, 0xFFFF, 0);
 	mt_spm_pmic_wrap_set_cmd(PMIC_WRAP_PHASE_SUSPEND,
@@ -808,6 +802,46 @@ int __attribute__((weak)) get_dlpt_imix_spm(void)
 #endif
 #endif
 
+#ifdef CONFIG_SONY_S1_SUPPORT
+#include <linux/of.h>
+#include <mt-plat/mt_io.h>
+
+extern volatile unsigned long magic_val;
+extern void __iomem *magic_base;
+
+void write_magic(volatile unsigned long magic_write, int log_option)
+{
+	if (magic_base != 0)
+	{
+		writel(magic_write, IOMEM(magic_base + 0x834));		
+
+		if( magic_write  == readl(IOMEM(magic_base + 0x834)))
+		{
+			if(log_option == 1)
+				spm_crit2("%lx write_magic success !!\n", magic_write);
+			else
+				printk("%lx write_magic success !!\n", magic_write);
+		}
+		else
+		{
+			if(log_option == 1)
+				spm_crit2("%lx write_magic failed !!\n", magic_write);
+			else
+				printk("%lx write_magic failed !!\n", magic_write);
+		}
+	}
+	else
+	{
+		if(log_option == 1)
+			spm_crit2("magic_base invalid !!\n");
+		else
+			printk("magic_base invalid !!\n");
+	}
+}
+
+EXPORT_SYMBOL(write_magic);
+#endif
+
 wake_reason_t spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 {
 	u32 sec = 2;
@@ -846,14 +880,7 @@ wake_reason_t spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 
 	/* TODO: lpddr support */
 	/* pcm_index = DYNA_LOAD_PCM_SUSPEND + cpu / 4 + !!is_lpddr4() * 2; */
-#if defined(CONFIG_MTK_PMIC_CHIP_MT6353) && defined(CONFIG_ARCH_MT6755)
-	if (use_new_spmfw)
-		pcm_index = DYNA_LOAD_PCM_SUSPEND_R + cpu / 4;
-	else
-		pcm_index = DYNA_LOAD_PCM_SUSPEND + cpu / 4;
-#else
 	pcm_index = DYNA_LOAD_PCM_SUSPEND + cpu / 4;
-#endif
 
 	if (dyna_load_pcm[pcm_index].ready)
 		pcmdesc = &(dyna_load_pcm[pcm_index].desc);
@@ -865,10 +892,6 @@ wake_reason_t spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 	pcmdesc = __spm_suspend.pcmdesc;
 #endif
 	pwrctrl = __spm_suspend.pwrctrl;
-
-#if defined(CONFIG_ARCH_MT6755) && defined(CONFIG_MTK_PMIC_CHIP_MT6353)
-	spm_flags |= spm_use_mt6311() ? SPM_FLAG_EN_CONN_CLOCK_BUF_CTRL : 0;
-#endif
 
 	update_pwrctrl_pcm_flags(&spm_flags);
 	set_pwrctrl_pcm_flags(pwrctrl, spm_flags);
@@ -956,6 +979,10 @@ wake_reason_t spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 	spm_trigger_wfi_for_sleep(pwrctrl);
 #if SPM_AEE_RR_REC
 	aee_rr_rec_spm_suspend_val(SPM_SUSPEND_LEAVE_WFI);
+#endif
+
+#ifdef CONFIG_SONY_S1_SUPPORT
+	write_magic(magic_val, 1);
 #endif
 
 	/* record last wakesta */
@@ -1193,7 +1220,6 @@ void spm_output_sleep_option(void)
 		   SPM_PWAKE_EN, SPM_PCMWDT_EN, SPM_BYPASS_SYSPWREQ);
 }
 
-#if !defined(CONFIG_ARCH_MT6755)
 uint32_t get_suspend_debug_regs(uint32_t index)
 {
 	uint32_t value = 0;
@@ -1240,7 +1266,6 @@ uint32_t get_suspend_debug_regs(uint32_t index)
 	return value;
 }
 EXPORT_SYMBOL(get_suspend_debug_regs);
-#endif
 
 /* record last wakesta */
 u32 spm_get_last_wakeup_src(void)

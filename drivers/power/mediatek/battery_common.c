@@ -1434,7 +1434,7 @@ static ssize_t show_Power_On_Voltage(struct device *dev, struct device_attribute
 {
 	int ret_value = 1;
 
-	ret_value = 3400;
+	ret_value = 3300;
 	battery_log(BAT_LOG_CRTI, "[EM] Power_On_Voltage : %d\n", ret_value);
 	return sprintf(buf, "%u\n", ret_value);
 }
@@ -1455,7 +1455,7 @@ static ssize_t show_Power_Off_Voltage(struct device *dev, struct device_attribut
 {
 	int ret_value = 1;
 
-	ret_value = 3400;
+	ret_value = 3300;
 	battery_log(BAT_LOG_CRTI, "[EM] Power_Off_Voltage : %d\n", ret_value);
 	return sprintf(buf, "%u\n", ret_value);
 }
@@ -3378,7 +3378,7 @@ static long adc_cali_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 		else if (charging_level_data[0] == 15)
 			charging_level_data[0] = CHARGE_CURRENT_1600_00_MA;
 		else
-			charging_level_data[0] = CHARGE_CURRENT_450_00_MA;
+            charging_level_data[0] = CHARGE_CURRENT_450_00_MA;
 
 		wake_up_bat();
 		battery_log(BAT_LOG_CRTI, "**** unlocked_ioctl : set_Charger_Current:%d\n",

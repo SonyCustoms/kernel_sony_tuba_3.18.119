@@ -37,6 +37,12 @@
 #endif
 #include "aee-common.h"
 
+
+#ifdef CONFIG_CCI_KLOG
+#include <linux/cciklog.h>
+#endif // #ifdef CONFIG_CCI_KLOG
+
+
 #undef WDT_DEBUG_VERBOSE
 /* #define WDT_DEBUG_VERBOSE */
 
@@ -77,7 +83,6 @@ static struct stacks_buffer stacks_buffer_bin[NR_CPUS];
 struct regs_buffer {
 	struct pt_regs regs;
 	int real_len;
-	struct task_struct *tsk;
 };
 static struct regs_buffer regs_buffer_bin[NR_CPUS];
 
@@ -320,7 +325,7 @@ static void aee_save_reg_stack_sram(int cpu)
 		aee_sram_fiq_log(str_buf);
 	}
 
-	mrdump_mini_per_cpu_regs(cpu, &regs_buffer_bin[cpu].regs, regs_buffer_bin[cpu].tsk);
+	mrdump_mini_per_cpu_regs(cpu, &regs_buffer_bin[cpu].regs);
 }
 
 #ifdef CONFIG_SMP
@@ -472,6 +477,15 @@ void aee_wdt_fiq_info(void *arg, void *regs, void *svc_sp)
 	struct pt_regs *ptregs = (struct pt_regs *)regs;
 	int cpu = 0;
 
+
+#ifdef CONFIG_CCI_KLOG
+#if CCI_KLOG_CRASH_SIZE
+	set_fault_state(FAULT_LEVEL_WATCHDOG, FAULT_TYPE_NONE, "watchdog");
+#endif // #if CCI_KLOG_CRASH_SIZE
+	cklc_save_magic(KLOG_MAGIC_FIQ_HANG, KLOG_STATE_NONE);
+#endif // #ifdef CONFIG_CCI_KLOG
+
+
 	asm volatile ("mov %0, %1\n\t" "mov fp, %2\n\t":"=r" (sp) : "r"(svc_sp), "r"(ptregs->ARM_fp));
 
 	aee_rr_rec_fiq_step(AEE_FIQ_STEP_WDT_FIQ_INFO);
@@ -494,7 +508,6 @@ void aee_wdt_fiq_info(void *arg, void *regs, void *svc_sp)
 	aee_rr_rec_fiq_step(AEE_FIQ_STEP_WDT_FIQ_STACK);
 	aee_wdt_dump_stack_bin(cpu, ((struct pt_regs *)regs)->ARM_sp,
 			       ((struct pt_regs *)regs)->ARM_sp + WDT_SAVE_STACK_SIZE);
-	regs_buffer_bin[cpu].tsk = current;
 	aee_save_reg_stack_sram(cpu);
 
 	if (atomic_xchg(&wdt_enter_fiq, 1) != 0) {

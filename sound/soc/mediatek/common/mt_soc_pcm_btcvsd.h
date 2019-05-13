@@ -41,7 +41,6 @@
 #include <sound/soc.h>
 
 #undef DEBUG_AUDDRV
-
 #ifdef DEBUG_AUDDRV
 #define LOGBT(format, args...) pr_warn(format, ##args)
 #else
@@ -88,14 +87,14 @@ extern struct device *mDev_btcvsd_tx;
 
 /* TX */
 #define SCO_TX_ENCODE_SIZE           (60) /* 60 byte (60*8 samples) */
-/* 18 = 6 * 180 / SCO_TX_ENCODE_SIZE */
-#define SCO_TX_PACKER_BUF_NUM (18)
+#define SCO_TX_PACKER_BUF_NUM        (8) /* 8 */
+#define SCO_TX_PACKET_MASK           (0x7) /* 0x7*/
 #define SCO_TX_PCM64K_BUF_SIZE       (SCO_TX_ENCODE_SIZE*2*8) /* 60 * 2 * 8 byte */
 
 /* RX */
 #define SCO_RX_PLC_SIZE              (30)
-#define SCO_RX_PACKER_BUF_NUM        (64)
-#define SCO_RX_PACKET_MASK           (0x3F)
+#define SCO_RX_PACKER_BUF_NUM        (16)   /* 16*/
+#define SCO_RX_PACKET_MASK           (0xF)   /* 0xF */
 #define SCO_RX_PCM64K_BUF_SIZE       (SCO_RX_PLC_SIZE*2*8)
 #define SCO_RX_PCM8K_BUF_SIZE        (SCO_RX_PLC_SIZE*2)
 
@@ -251,12 +250,6 @@ typedef struct {
 		kal_bool  fIsStructMemoryOnMED;
 		enum BT_SCO_BAND band;
 } BT_SCO_T;
-
-typedef struct {
-	unsigned long long uDataCountEquiTime;
-	unsigned long long uTimestampUS;
-} TIME_BUFFER_INFO_T;
-
 extern BT_SCO_T btsco;
 
 extern volatile kal_uint32 *bt_hw_REG_PACKET_W, *bt_hw_REG_PACKET_R;
@@ -267,13 +260,6 @@ extern CVSD_MEMBLOCK_T BT_CVSD_Mem;
 extern kal_uint32 disableBTirq;
 
 extern bool isProbeDone;
-
-extern TIME_BUFFER_INFO_T time_buffer_info_rx;
-extern TIME_BUFFER_INFO_T time_buffer_info_tx;
-extern kal_uint64 BT_RX_timestamp;
-extern kal_uint64 BT_TX_timestamp;
-extern kal_uint64 BT_RX_bufdata_equivalent_time;
-extern kal_uint64 BT_TX_bufdata_equivalent_time;
 
 /*****************************************************************************
  *    BT SCO Internal Function
@@ -299,9 +285,6 @@ void Set_BTCVSD_State(unsigned long arg);
 bool btcvsd_rx_irq_received(void);
 bool btcvsd_rx_timeout(void);
 void btcvsd_rx_reset_timeout(void);
-
-bool btcvsd_tx_timeout(void);
-void btcvsd_tx_reset_timeout(void);
 
 unsigned long btcvsd_frame_to_bytes(struct snd_pcm_substream *substream,
 				    unsigned long count);

@@ -58,9 +58,7 @@ extern bool movable_node_enabled;
 #endif /* CONFIG_MOVABLE_NODE */
 
 
-#ifdef CONFIG_MTK_MEMCFG
 /* Record reserved memblock */
-#define MAX_MEMBLOCK_RECORD 150
 #define MAX_MEMBLOCK_TRACK_DEPTH 20
 struct memblock_record {
 	phys_addr_t base;
@@ -73,10 +71,9 @@ struct memblock_record {
 struct memblock_stack_trace {
 	unsigned long size;
 	unsigned long addrs[MAX_MEMBLOCK_TRACK_DEPTH];
-	int count;
+	struct stack_trace trace;
 	int merge;
 };
-#endif
 
 #define memblock_dbg(fmt, ...) \
 	if (memblock_debug) printk(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__)

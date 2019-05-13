@@ -20,9 +20,27 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/clk.h>
+#include <linux/gpio.h>
 
 #define KPD_NAME	"mtk-kpd"
 #define MTK_KP_WAKESOURCE	/* this is for auto set wake up source */
+
+/**/
+#include <linux/seq_file.h>
+#include <linux/proc_fs.h>
+#include <linux/switch.h>
+/**/
+#include <linux/workqueue.h>
+/**/
+/**/
+
+#if defined(CONFIG_POWERKEY_FORCECRASH)
+#define PWK_DUMP
+#ifdef __aarch64__
+#undef BUG
+#define BUG() *((unsigned *)0xaed) = 0xDEAD
+#endif
+#endif
 
 void __iomem *kp_base;
 static unsigned int kp_irqnr;
@@ -30,7 +48,7 @@ struct input_dev *kpd_input_dev;
 static bool kpd_suspend;
 static int kpd_show_hw_keycode = 1;
 static int kpd_show_register = 1;
-unsigned long call_status = 0;
+unsigned long call_status = 2;
 struct wake_lock kpd_suspend_lock;	/* For suspend usage */
 
 /*for kpd_memory_setting() function*/
@@ -57,6 +75,43 @@ static DECLARE_TASKLET(kpd_pwrkey_tasklet, kpd_pwrkey_handler, 0);
 /* for keymap handling */
 static void kpd_keymap_handler(unsigned long data);
 static DECLARE_TASKLET(kpd_keymap_tasklet, kpd_keymap_handler, 0);
+
+//Camera key bring up -S
+/* for camera key setting*/
+#define KPD_CAM_FOCUS_MAP KEY_FOCUS
+#define KPD_CAM_CAPTURE_MAP KEY_CAMERA
+#define KPD_CAMERA_NUM 	2
+//#define KPD_VOLUP 104
+#define GPIO_CEI_FOCUS_KEY		79
+#define GPIO_CEI_CAPTURE_KEY		62
+//#define camerakeydebounce 	250
+//static u8 camera_focus_state = IRQF_TRIGGER_FALLING;
+//static u8 camera_capture_state = IRQF_TRIGGER_FALLING;
+static unsigned int focuskey_irq, capturekey_irq;
+static unsigned int gpiopin, camerakeydebounce, focuskey_eint_type, capturekey_eint_type;
+static u16 kpd_camerakeymap[KPD_CAMERA_NUM] = {KPD_CAM_FOCUS_MAP , KPD_CAM_CAPTURE_MAP};
+static void camera_focus_eint_func(unsigned long data);
+static void camera_capture_eint_func(unsigned long data);
+static DECLARE_TASKLET(kpd_camera_focus_tasklet, camera_focus_eint_func, 0);
+static DECLARE_TASKLET(kpd_camera_capture_tasklet, camera_capture_eint_func, 0);
+//Camera key bring up -E
+
+/**/
+/* for hall sensor setting */
+#define CEI_HALL_OUT 107
+static void hall_out_handler(unsigned long data);
+static DECLARE_TASKLET(hall_out_tasklet, hall_out_handler, 0);
+static int old_INT_stat = 1;
+static struct switch_dev sdev;
+struct pinctrl *pinctrl_hall;
+struct pinctrl_state *pins_hall_default;
+static unsigned int hall_irqnr;
+struct device_node *hall_irq_node;
+/**/
+static struct delayed_work hall_work;
+static struct mutex hall_state_mutex;
+/**/
+/**/
 
 /*********************************************************************/
 static void kpd_memory_setting(void);
@@ -215,6 +270,13 @@ static bool aee_timer_5s_started;
 static bool flags_5s;
 #endif
 
+#ifdef PWK_DUMP
+#define AEE_POWERKEY_BIT 2
+static struct hrtimer aee_timer_powerkey_30s;
+static bool aee_timer_powerkey_30s_started;
+#define AEE_DELAY_TIME_30S 30
+#endif
+
 static inline void kpd_update_aee_state(void)
 {
 	if (aee_pressed_keys == ((1 << AEE_VOLUMEUP_BIT) | (1 << AEE_VOLUMEDOWN_BIT))) {
@@ -267,6 +329,22 @@ static inline void kpd_update_aee_state(void)
 		}
 #endif
 	}
+#ifdef PWK_DUMP
+		if (aee_pressed_keys == 1<<AEE_POWERKEY_BIT) {
+			printk("aee_timer_powerkey_30s_started  true  \n");
+			aee_timer_powerkey_30s_started = true;
+			hrtimer_start(&aee_timer_powerkey_30s,ktime_set(AEE_DELAY_TIME_30S, 0),HRTIMER_MODE_REL);
+		} else {
+			if (aee_timer_powerkey_30s_started) {
+				if (hrtimer_cancel(&aee_timer_powerkey_30s)) {
+					kpd_print("try to cancel aee_timer_powerkey_30s  \n");
+				}
+				aee_timer_powerkey_30s_started = false;
+				printk("aee_timer_powerkey_30s_started  false \n");
+				kpd_print("aee_timer aee_timer_powerkey_30s stop \n");
+			}
+		}
+#endif
 }
 
 static void kpd_aee_handler(u32 keycode, u16 pressed)
@@ -276,6 +354,12 @@ static void kpd_aee_handler(u32 keycode, u16 pressed)
 			__set_bit(AEE_VOLUMEUP_BIT, &aee_pressed_keys);
 		else if (keycode == KEY_VOLUMEDOWN)
 			__set_bit(AEE_VOLUMEDOWN_BIT, &aee_pressed_keys);
+#ifdef PWK_DUMP
+		else if (keycode == KEY_POWER) {
+			printk(KPD_SAY "kpd_aee_handler  KEY_POWER  __set_bit \n");
+			__set_bit(AEE_POWERKEY_BIT, &aee_pressed_keys);
+		}
+#endif
 		else
 			return;
 		kpd_update_aee_state();
@@ -284,6 +368,12 @@ static void kpd_aee_handler(u32 keycode, u16 pressed)
 			__clear_bit(AEE_VOLUMEUP_BIT, &aee_pressed_keys);
 		else if (keycode == KEY_VOLUMEDOWN)
 			__clear_bit(AEE_VOLUMEDOWN_BIT, &aee_pressed_keys);
+#ifdef PWK_DUMP
+		else if (keycode == KEY_POWER) {
+			printk(KPD_SAY "kpd_aee_handler  KEY_POWER  __clear_bit \n");
+			__clear_bit(AEE_POWERKEY_BIT, &aee_pressed_keys);
+		}
+#endif
 		else
 			return;
 		kpd_update_aee_state();
@@ -305,6 +395,16 @@ static enum hrtimer_restart aee_timer_5s_func(struct hrtimer *timer)
 
 	/* kpd_info("kpd: vol up+vol down AEE manual dump timer 5s !\n"); */
 	flags_5s = true;
+	return HRTIMER_NORESTART;
+}
+#endif
+
+#ifdef PWK_DUMP
+static enum hrtimer_restart aee_timer_30s_func(struct hrtimer *timer)
+{
+	pr_err("*************FORCE CRASH***************");
+	printk("in aee_timer_30s_func \n");
+	BUG();
 	return HRTIMER_NORESTART;
 }
 #endif
@@ -366,6 +466,10 @@ void kpd_pwrkey_pmic_handler(unsigned long pressed)
 		wake_lock(&pwrkey_lock);
 	else /* keep the lock for extra 500ms after the button is released */
 		wake_lock_timeout(&pwrkey_lock, HZ/2);
+#endif
+#ifdef PWK_DUMP
+	printk(KPD_SAY "Power Key generate, pressed=%ld enter kpd_aee_handler \n", pressed);
+	kpd_aee_handler(KEY_POWER, pressed);
 #endif
 }
 #endif
@@ -757,6 +861,162 @@ static int kpd_open(struct input_dev *dev)
 	kpd_slide_qwerty_init();	/* API 1 for kpd slide qwerty init settings */
 	return 0;
 }
+
+/*********************************************************************/
+/**/
+static int hall_out_status_show(struct seq_file *s, void *unused)
+{
+	int state;
+	state = __gpio_get_value(CEI_HALL_OUT);
+	seq_printf(s, "%d\n", state);
+	return 0;
+}
+static int hall_out_status_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, hall_out_status_show, NULL);
+}
+static const struct file_operations hall_out_status_fops = {
+	.owner	= THIS_MODULE,
+	.open	= hall_out_status_open,
+	.read		= seq_read,
+	.llseek	= seq_lseek,
+	.release	= single_release,
+};
+
+/**/
+static void hall_work_func(struct work_struct *work)
+{
+	int state;
+	state = __gpio_get_value(CEI_HALL_OUT);
+
+	kpd_print("[Keypad] state = %d ,  old_INT_stat = %d \n", (int)state, old_INT_stat);
+
+	mutex_lock(&hall_state_mutex);
+	if(old_INT_stat != state)
+	{
+		if(state == 1)
+		{
+			kpd_print("[Keypad] hall_out  (0 -> 1) OPEN\n");
+		}
+		else
+		{
+			kpd_print("[Keypad] hall_out  (1 -> 0) CLOSE\n");
+		}
+		old_INT_stat = state;
+		switch_set_state((struct switch_dev *)&sdev, state);
+	}
+	mutex_unlock(&hall_state_mutex);
+}
+/**/
+
+static void hall_out_handler(unsigned long data)
+{
+/**/
+#if 0
+	int state;
+	state = __gpio_get_value(CEI_HALL_OUT);
+
+	kpd_print("[Keypad] state = %d ,  old_INT_stat = %d \n", (int)state, old_INT_stat);
+
+	if(old_INT_stat != state)
+	{
+		if(state == 1)
+		{
+			kpd_print("[Keypad] hall_out  (0 -> 1) OPEN\n");
+		}
+		else
+		{
+			kpd_print("[Keypad] hall_out  (1 -> 0) CLOSE\n");
+		}
+		old_INT_stat = state;
+		switch_set_state((struct switch_dev *)&sdev, state);
+	}
+#endif
+	kpd_print("[Keypad] %s() Enter\n", __FUNCTION__);
+	schedule_delayed_work(&hall_work, 0);
+/**/
+	enable_irq(hall_irqnr);
+}
+
+static irqreturn_t hall_interrupt_handler(int irq, void *dev)
+{
+	/* use _nosync to avoid deadlock */
+	disable_irq_nosync(hall_irqnr);
+
+	kpd_print("[Keypad] %s() Enter\n", __FUNCTION__);
+	tasklet_schedule(&hall_out_tasklet);
+	return IRQ_HANDLED;
+}
+
+int hall_gpio_eint_setup(struct platform_device *pdev)
+{
+	int err;
+	int irq_flags;
+	kpd_print("[Keypad] %s , enter\n", __FUNCTION__ );
+
+	/* get pinctrl */
+	pinctrl_hall = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR_OR_NULL(pinctrl_hall)) {
+		kpd_print("[Keypad] %s , Failed to get pinctrl\n", __FUNCTION__ );
+		goto hall_gpio_pinctrl_err;
+	}
+
+	pins_hall_default = pinctrl_lookup_state(pinctrl_hall, "cei_hall_out");
+	if (IS_ERR_OR_NULL(pins_hall_default)) {
+		kpd_print("[Keypad] %s , Failed to look up cei_hall_out state\n", __FUNCTION__ );
+		goto hall_gpio_pinctrl_err;
+	}
+
+	/* request gpio */
+	err = gpio_request_one(CEI_HALL_OUT, GPIOF_DIR_IN, "hall_sensor_irq");
+	if (err) {
+		kpd_print("[Keypad] %s , unable to request gpio %d\n", __FUNCTION__ , CEI_HALL_OUT);
+		goto hall_gpio_pinctrl_err;
+	}
+
+	/* select pinctrl */
+	err = pinctrl_select_state(pinctrl_hall, pins_hall_default);
+	if (err) {
+		kpd_print("[Keypad] %s , Can't select pinctrl default state\n", __FUNCTION__ );
+		return err;
+	}
+
+	/* request irq */
+	hall_irq_node = of_find_compatible_node(NULL, NULL, "mediatek, cei_hall_out-eint");
+	if (hall_irq_node) {
+		hall_irqnr = irq_of_parse_and_map(hall_irq_node, 0);
+		kpd_print("[Keypad] %s , hall_irqnr = %d\n", __FUNCTION__ , hall_irqnr );
+		if (!hall_irqnr) {
+			kpd_print("[Keypad] %s , irq_of_parse_and_map fail!!\n", __FUNCTION__ );
+			goto free_gpio;
+		}
+
+		irq_flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT;
+		//if ( request_irq(hall_irqnr, hall_interrupt_handler, IRQF_TRIGGER_NONE, "cei_hall_out-eint", NULL) ) {
+		if ( request_irq(hall_irqnr, hall_interrupt_handler, irq_flags, "cei_hall_out-eint", NULL) ) {
+			kpd_print("[Keypad] %s , IRQ LINE NOT AVAILABLE!!\n", __FUNCTION__ );
+			goto free_gpio;
+		}
+
+		enable_irq(hall_irqnr);
+	}
+	else {
+		kpd_print("[Keypad] %s , cannot find cei_hall_out-eint node\n", __FUNCTION__ );
+		goto free_gpio;
+	}
+
+	kpd_print("[Keypad] %s , exit - Success\n", __FUNCTION__ );
+	return 0;
+
+free_gpio:
+	gpio_free(CEI_HALL_OUT);
+hall_gpio_pinctrl_err:
+	kpd_print("[Keypad] %s , exit - Fail\n", __FUNCTION__ );
+	return -EINVAL;
+}
+/**/
+/*********************************************************************/
+
 void kpd_get_dts_info(struct device_node *node)
 {
 	int ret;
@@ -786,13 +1046,175 @@ void kpd_get_dts_info(struct device_node *node)
 		  kpd_dts_data.kpd_key_debounce, kpd_dts_data.kpd_sw_pwrkey, kpd_dts_data.kpd_hw_pwrkey,
 		  kpd_dts_data.kpd_hw_rstkey, kpd_dts_data.kpd_sw_rstkey);
 }
+//Camera key bring up -S
+/*********************************************************************/
+static irqreturn_t kpd_camera_focus_eint_handler(int irq, void *dev_id)
+{
+	disable_irq_nosync(focuskey_irq);
+	tasklet_schedule(&kpd_camera_focus_tasklet);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t kpd_camera_capture_eint_handler(int irq, void *dev_id)
+{
+	disable_irq_nosync(capturekey_irq);
+	tasklet_schedule(&kpd_camera_capture_tasklet);
+	return IRQ_HANDLED;
+
+}
+
+static int kpd_camerakey_setup_eint(void)
+{
+	int err = 0;
+	struct device_node *node;
+	u32 ints[2] = { 0, 0 };
+	u32 ints1[2] = { 0, 0 };
+	int cmkey_irq_flags;
+	cmkey_irq_flags = IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH | IRQF_ONESHOT;
+	//Focus key Setting.
+	node = of_find_compatible_node(NULL, NULL, "mediatek,CEI_CAMERA_FOCUS-eint");
+	if (node) {
+		of_property_read_u32_array(node, "debounce", ints, ARRAY_SIZE(ints));
+		of_property_read_u32_array(node, "interrupts", ints1, ARRAY_SIZE(ints1));
+		gpiopin = ints[0];
+		camerakeydebounce = ints[1];
+		focuskey_eint_type = ints1[1];
+		//gpio_request(gpiopin, "foucskey");
+		gpio_set_debounce(gpiopin, 300);
+		//gpio_free(gpiopin);
+		focuskey_irq = irq_of_parse_and_map(node, 0);
+		err = request_irq(focuskey_irq, kpd_camera_focus_eint_handler, cmkey_irq_flags, "focuskey-eint", NULL);
+		//err = request_irq(focuskey_irq, kpd_camera_focus_eint_handler, irq_flags, "focuskey-eint", NULL);
+		if (err > 0) {
+			kpd_print("[Keypad] FOUCS KEY EINT IRQ LINE NOT AVAILABLE\n");
+		} else {
+			kpd_print("[keypad] FOUCS KEY set EINT finished, focuskey_irq=%d, headsetdebounce=%d\n",
+				     focuskey_irq, camerakeydebounce);
+		}
+	} else {
+		kpd_print("[Keypad]%s can't find compatible node\n", __func__);
+	}
+	//Capture key Setting.
+		node = of_find_compatible_node(NULL, NULL, "mediatek,CEI_CAMERA_CAPTURE-eint");
+	if (node) {
+		of_property_read_u32_array(node, "debounce", ints, ARRAY_SIZE(ints));
+		of_property_read_u32_array(node, "interrupts", ints1, ARRAY_SIZE(ints1));
+		gpiopin = ints[0];
+		camerakeydebounce = ints[1];
+		capturekey_eint_type = ints1[1];
+		//gpio_request(gpiopin, "capturekey");
+	       gpio_set_debounce(gpiopin, 300);
+		//gpio_free(gpiopin);
+		capturekey_irq = irq_of_parse_and_map(node, 0);
+		err = request_irq(capturekey_irq, kpd_camera_capture_eint_handler, cmkey_irq_flags, "capturekey-eint", NULL);
+		//err = request_irq(capturekey_irq, kpd_camera_capture_eint_handler, irq_flags, "capturekey-eint", NULL);
+		if (err > 0) {
+			kpd_print("[Keypad] CAPTURE KEY EINT IRQ LINE NOT AVAILABLE\n");
+		} else {
+			kpd_print("[keypad] CAPTURE KEY set EINT finished, capturekey_irq=%d, headsetdebounce=%d\n",
+				     capturekey_irq, camerakeydebounce);
+		}
+	} else {
+		kpd_print("[Keypad]%s can't find compatible node\n", __func__);
+	}
+		return 0;
+}
+
+
+static void camera_focus_eint_func(unsigned long data)
+{
+	bool pressed = false;
+	u8 old_state;
+
+#if 1
+	if(focuskey_eint_type == IRQ_TYPE_LEVEL_LOW)
+	{
+               old_state = (1);
+	}
+	else
+	{
+	       old_state = (0);
+	}
+
+	kpd_print("[Keypad]old_state = %d\n",(int)old_state);
+
+       if(focuskey_eint_type == IRQ_TYPE_LEVEL_LOW)
+       {
+		pressed=true;
+		irq_set_irq_type(focuskey_irq, IRQ_TYPE_LEVEL_HIGH);
+		focuskey_eint_type = IRQ_TYPE_LEVEL_HIGH;
+       }
+       else
+       {
+		pressed=false;
+		irq_set_irq_type(focuskey_irq, IRQ_TYPE_LEVEL_LOW);
+		focuskey_eint_type = IRQ_TYPE_LEVEL_LOW;
+       }
+	//kpd_info("[Keypad]revert camera_focus_state = %d \n",(int)camera_capture_state);
+	printk(KPD_SAY "(%s) [Keypad] HW keycode = %u\n",
+				       pressed ? "pressed" : "released", KPD_CAM_FOCUS_MAP);
+	//kpd_print("[Keypad]pressed = %d\n",(int)pressed);
+	input_report_key(kpd_input_dev, KPD_CAM_FOCUS_MAP, pressed);
+	input_sync(kpd_input_dev);
+	enable_irq(focuskey_irq);
+
+#endif
+
+}
+static void camera_capture_eint_func(unsigned long data)
+{
+	bool pressed = false;
+	u8 old_state;
+
+	wake_lock_timeout(&kpd_suspend_lock, HZ / 2);
+#if 1
+	if(capturekey_eint_type == IRQ_TYPE_LEVEL_LOW)
+	{
+		old_state = (1);
+	}
+	else
+	{
+		old_state = (0);
+	}
+
+	kpd_print("[Keypad]old_state = %d\n",(int)old_state);
+
+	if(capturekey_eint_type == IRQ_TYPE_LEVEL_LOW)
+       {
+		pressed=true;
+		irq_set_irq_type(capturekey_irq, IRQ_TYPE_LEVEL_HIGH);
+		capturekey_eint_type = IRQ_TYPE_LEVEL_HIGH;
+       }
+       else
+       {
+		pressed=false;
+		irq_set_irq_type(capturekey_irq, IRQ_TYPE_LEVEL_LOW);
+		capturekey_eint_type = IRQ_TYPE_LEVEL_LOW;
+       }
+	//kpd_info("[Keypad]revert camera_capture_state = %d \n",(int)camera_capture_state);
+	printk(KPD_SAY "(%s) [Keypad] HW keycode = %u\n",
+				       pressed ? "pressed" : "released", KPD_CAM_CAPTURE_MAP);
+	//kpd_print("[Keypad]pressed = %d\n",(int)pressed);
+	input_report_key(kpd_input_dev, KPD_CAM_CAPTURE_MAP, pressed);
+	input_sync(kpd_input_dev);
+	enable_irq(capturekey_irq);
+
+#endif
+
+}
+//Camera key bring up -E
 static int kpd_pdrv_probe(struct platform_device *pdev)
 {
 
 	int i, r;
 	int err = 0;
 	struct clk *kpd_clk = NULL;
-
+	//Keypad porting - S
+  #if 1
+	struct pinctrl *pinctrl1;
+	struct pinctrl_state *pins_default, *pins_eint_int;
+  #endif
+        //Keypad porting - E
 	kpd_info("Keypad probe start!!!\n");
 
 	/*kpd-clk should be control by kpd driver, not depend on default clock state*/
@@ -846,6 +1268,60 @@ static int kpd_pdrv_probe(struct platform_device *pdev)
 	kpd_memory_setting();
 
 	__set_bit(EV_KEY, kpd_input_dev->evbit);
+//keypad bring up - S
+
+#if 1  //for volume down key
+  pinctrl1 = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(pinctrl1)) {
+		err = PTR_ERR(pinctrl1);
+		dev_err(&pdev->dev, "fwq Cannot find voldown pinctrl1!\n");
+		return err;
+	}
+
+	pins_default = pinctrl_lookup_state(pinctrl1, "default");
+	if (IS_ERR(pins_default)) {
+		err = PTR_ERR(pins_default);
+		dev_err(&pdev->dev, "fwq Cannot find voldown pinctrl default!\n");
+	}
+
+	pins_eint_int = pinctrl_lookup_state(pinctrl1, "kpd_pins_eint");
+	if (IS_ERR(pins_eint_int)) {
+		err = PTR_ERR(pins_eint_int);
+		dev_err(&pdev->dev, "fwq Cannot find voldown pinctrl state_eint_int!\n");
+		return err;
+	}
+#endif
+	#if 0
+	gpio_request(KPD_VOLUP , "KPD_KCOL1");
+	gpio_direction_input(KPD_VOLUP);
+	gpio_free(KPD_VOLUP);
+	#endif
+	pinctrl_select_state(pinctrl1, pins_eint_int);
+//keypad bring up - E
+	/**/
+	err = hall_gpio_eint_setup(pdev);
+	if (err!=0) {
+		kpd_print("[Keypad] %s , hall_gpio_eint_setup failed (%d)\n", __FUNCTION__ , err );
+	}
+
+	proc_create_data("hall_out_status", 0444, NULL, &hall_out_status_fops, NULL);
+	sdev.name = "hall_gpio";
+	sdev.index = 0;
+	sdev.state = 1;
+	r = switch_dev_register(&sdev);
+	if (r) {
+		kpd_info("[Keypad] %s , register switch device failed (%d)\n", __FUNCTION__ , r);
+		switch_dev_unregister(&sdev);
+		return r;
+	}
+	/**/
+	switch_set_state((struct switch_dev *)&sdev, 1);	// state initialization
+	/**/
+	/**/
+	mutex_init(&hall_state_mutex);
+	INIT_DELAYED_WORK(&hall_work, hall_work_func);
+	/**/
+	/**/
 
 #if defined(CONFIG_KPD_PWRKEY_USE_EINT) || defined(CONFIG_KPD_PWRKEY_USE_PMIC)
 	__set_bit(kpd_dts_data.kpd_sw_pwrkey, kpd_input_dev->keybit);
@@ -876,6 +1352,14 @@ static int kpd_pdrv_probe(struct platform_device *pdev)
 #endif
 #ifdef CONFIG_MTK_MRDUMP_KEY
 		__set_bit(KEY_RESTART, kpd_input_dev->keybit);
+#endif
+//Caerma key porting
+#if 1
+	for (i = 0; i < KPD_CAMERA_NUM; i++) {
+		if (kpd_camerakeymap[i] != 0)
+	__set_bit(kpd_camerakeymap[i], kpd_input_dev->keybit);
+		kpd_info("[Keypad] set kpd_camerakeymap[%d]" , i);
+		}
 #endif
 	kpd_input_dev->dev.parent = &pdev->dev;
 	r = input_register_device(kpd_input_dev);
@@ -909,7 +1393,11 @@ static int kpd_pdrv_probe(struct platform_device *pdev)
 /* This func use as mrdump now, if powerky use kpd eint it need to open another API */
 	mt_eint_register();
 #endif
-
+   //Camera key bring up -S
+   printk("camera_key_setup_eint() START!!\n");
+	kpd_camerakey_setup_eint();
+	printk("camera_key_setup_eint() Done!!\n");
+	//Camera key bring up -E
 #ifdef CONIFG_KPD_ACCESS_PMIC_REGMAP
 	/*kpd_hal access pmic registers via regmap interface*/
 	err = kpd_init_pmic_regmap(pdev);
@@ -926,6 +1414,11 @@ static int kpd_pdrv_probe(struct platform_device *pdev)
 #if AEE_ENABLE_5_15
 	hrtimer_init(&aee_timer_5s, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	aee_timer_5s.function = aee_timer_5s_func;
+#endif
+
+#ifdef PWK_DUMP
+	hrtimer_init(&aee_timer_powerkey_30s, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	aee_timer_powerkey_30s.function = aee_timer_30s_func;
 #endif
 	err = kpd_create_attr(&kpd_pdrv.driver);
 	if (err) {
@@ -951,11 +1444,7 @@ static int kpd_pdrv_suspend(struct platform_device *pdev, pm_message_t state)
 	if (call_status == 2) {
 		kpd_print("kpd_early_suspend wake up source enable!! (%d)\n", kpd_suspend);
 	} else {
-		#ifdef AGOLD_KEY_RESUME_SYSTEM
-		kpd_wakeup_src_setting(1);
-		#else
 		kpd_wakeup_src_setting(0);
-		#endif
 		kpd_print("kpd_early_suspend wake up source disable!! (%d)\n", kpd_suspend);
 	}
 #endif
@@ -991,9 +1480,6 @@ static void kpd_early_suspend(struct early_suspend *h)
 		kpd_print("kpd_early_suspend wake up source enable!! (%d)\n", kpd_suspend);
 	} else {
 		/* kpd_wakeup_src_setting(0); */
-		#ifdef AGOLD_KEY_RESUME_SYSTEM
-		kpd_wakeup_src_setting(1);
-		#endif
 		kpd_print("kpd_early_suspend wake up source disable!! (%d)\n", kpd_suspend);
 	}
 #endif
@@ -1009,9 +1495,6 @@ static void kpd_early_resume(struct early_suspend *h)
 	} else {
 		kpd_print("kpd_early_resume wake up source enable!! (%d)\n", kpd_suspend);
 		/* kpd_wakeup_src_setting(1); */
-		#ifdef AGOLD_KEY_RESUME_SYSTEM
-		kpd_wakeup_src_setting(1);
-		#endif
 	}
 #endif
 	kpd_print("early resume!! (%d)\n", kpd_suspend);

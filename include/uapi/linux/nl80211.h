@@ -738,10 +738,6 @@
  *	before removing a station entry entirely, or before disassociating
  *	or similar, cleanup will happen in the driver/device in this case.
  *
- * @NL80211_CMD_ABORT_SCAN: Stop an ongoing scan. Returns -ENOENT if a scan is
- *	not running. The driver indicates the status of the scan through
- *	cfg80211_scan_done().
- *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -915,19 +911,6 @@ enum nl80211_commands {
 
 	NL80211_CMD_ADD_TX_TS,
 	NL80211_CMD_DEL_TX_TS,
-
-	NL80211_CMD_GET_MPP,
-
-	NL80211_CMD_JOIN_OCB,
-	NL80211_CMD_LEAVE_OCB,
-
-	NL80211_CMD_CH_SWITCH_STARTED_NOTIFY,
-
-	NL80211_CMD_TDLS_CHANNEL_SWITCH,
-	NL80211_CMD_TDLS_CANCEL_CHANNEL_SWITCH,
-
-	NL80211_CMD_WIPHY_REG_CHANGE,
-	NL80211_CMD_ABORT_SCAN,
 
 	/* add new commands above here */
 
@@ -2045,8 +2028,6 @@ enum nl80211_attrs {
 #define NL80211_ATTR_KEY NL80211_ATTR_KEY
 #define NL80211_ATTR_KEYS NL80211_ATTR_KEYS
 #define NL80211_ATTR_FEATURE_FLAGS NL80211_ATTR_FEATURE_FLAGS
-
-#define NL80211_WIPHY_NAME_MAXLEN		64
 
 #define NL80211_MAX_SUPP_RATES			32
 #define NL80211_MAX_SUPP_HT_RATES		77

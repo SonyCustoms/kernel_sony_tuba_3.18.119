@@ -181,6 +181,10 @@ struct mt65xx_led_data {
 
 struct nled_setting {
 	u8 nled_mode;
+    //CEI comments start
+    
+	u8 blink_level;
+    //CEI comments end
 	u32 blink_on_time;
 	u32 blink_off_time;
 };

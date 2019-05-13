@@ -54,10 +54,6 @@
 
 #include "lockdep_internals.h"
 
-#ifdef MTK_LOCK_DEBUG
-#include "sched.h"
-#endif
-
 #define CREATE_TRACE_POINTS
 #include <trace/events/lock.h>
 
@@ -78,22 +74,11 @@ module_param(lock_stat, int, 0644);
 
 static void lockdep_aee(void)
 {
-#ifdef MTK_LOCK_DEBUG
+#ifdef CONFIG_MTK_LOCK_DEBUG
 	char aee_str[40];
-	int cpu;
-	struct rq *rq;
 
-	cpu = raw_smp_processor_id();
-	rq = cpu_rq(cpu);
-
-	if (!raw_spin_is_locked(&rq->lock)) {
-		snprintf(aee_str, 40, "[%s]LockProve Warning", current->comm);
-		#if defined(CONFIG_MTK_AEE_FEATURE)
-		aee_kernel_warning_api(__FILE__, __LINE__,
-			DB_OPT_DUMMY_DUMP | DB_OPT_FTRACE,
-			aee_str, "LockProve Debug\n");
-		#endif
-	}
+	snprintf(aee_str, 40, "[%s]LockProve Warning", current->comm);
+	aee_kernel_warning_api(__FILE__, __LINE__, DB_OPT_DUMMY_DUMP | DB_OPT_FTRACE, aee_str, "LockProve Debug\n");
 #else
 	return;
 #endif
@@ -449,8 +434,8 @@ static int save_trace(struct stack_trace *trace)
 		if (!debug_locks_off_graph_unlock())
 			return 0;
 
-		lockdep_aee();
 		print_lockdep_off("BUG: MAX_STACK_TRACE_ENTRIES too low!");
+		lockdep_aee();
 		dump_stack();
 
 		return 0;
@@ -1198,7 +1183,8 @@ print_circular_bug_header(struct lock_list *entry, unsigned int depth,
 		return 0;
 
 	/* Add by Mtk */
-	lockdep_aee();
+	if (depth < 5)
+		lockdep_aee();
 
 	printk("\n");
 	printk("======================================================\n");
@@ -3072,9 +3058,6 @@ print_lock_nested_lock_not_held(struct task_struct *curr,
 	if (debug_locks_silent)
 		return 0;
 
-	/* Add by Mtk */
-	lockdep_aee();
-
 	printk("\n");
 	printk("==================================\n");
 	printk("[ BUG: Nested lock was not taken ]\n");
@@ -3168,17 +3151,10 @@ static int __lock_acquire(struct lockdep_map *lock, unsigned int subclass,
 	if (depth) {
 		hlock = curr->held_locks + depth - 1;
 		if (hlock->class_idx == class_idx && nest_lock) {
-			if (hlock->references) {
-				/*
-				 * Check: unsigned int references:12, overflow.
-				 */
-				if (DEBUG_LOCKS_WARN_ON(hlock->references == (1 << 12)-1))
-					return 0;
-
+			if (hlock->references)
 				hlock->references++;
-			} else {
+			else
 				hlock->references = 2;
-			}
 
 			return 1;
 		}
@@ -4175,9 +4151,6 @@ static void print_held_locks_bug(void)
 	if (debug_locks_silent)
 		return;
 
-	/* Add by Mtk */
-	lockdep_aee();
-
 	printk("\n");
 	printk("=====================================\n");
 	printk("[ BUG: %s/%d still has locks held! ]\n",
@@ -4279,10 +4252,6 @@ asmlinkage __visible void lockdep_sys_exit(void)
 	if (unlikely(curr->lockdep_depth)) {
 		if (!debug_locks_off())
 			return;
-
-		/* Add by Mtk */
-		lockdep_aee();
-
 		printk("\n");
 		printk("================================================\n");
 		printk("[ BUG: lock held when returning to user space! ]\n");
@@ -4321,8 +4290,6 @@ void lockdep_rcu_suspicious(const char *file, const int line, const char *s)
 				? "RCU used illegally from idle CPU!\n"
 				: "",
 	       rcu_scheduler_active, debug_locks);
-	pr_info("cpu_id = %d, cpu_is_offline = %ld\n",
-		raw_smp_processor_id(), cpu_is_offline(raw_smp_processor_id()));
 
 	/*
 	 * If a CPU is in the RCU-free window in idle (ie: in the section

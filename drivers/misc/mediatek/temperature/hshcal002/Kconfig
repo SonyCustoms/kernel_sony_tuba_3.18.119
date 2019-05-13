@@ -1,5 +1,0 @@
-
-config MTK_HSHCAL002
-	bool "HSHCAL002 for MediaTek package"
-	default n
-

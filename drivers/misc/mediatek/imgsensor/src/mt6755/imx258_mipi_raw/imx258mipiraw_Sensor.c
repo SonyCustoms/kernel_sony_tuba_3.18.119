@@ -57,11 +57,6 @@
 #define LOGE(format, args...)   pr_err(PFX "[%s] " format, __FUNCTION__, ##args)
 
 
-
-extern bool IMX258CheckLensVersion(void);
-
-
-
 static DEFINE_SPINLOCK(imgsensor_drv_lock);
 
 
@@ -130,7 +125,7 @@ static imgsensor_info_struct imgsensor_info = {
 		.max_framerate = 300,//modify
 	},
 	.hs_video = {/*slow motion*/
-		.pclk = 518400000,//480000000,//518400000,
+		.pclk = 518400000,//480000000,
 		.linelength = 5352,
 		.framelength = 812,//746,//806,
 		.startx = 0,
@@ -163,11 +158,11 @@ static imgsensor_info_struct imgsensor_info = {
 	.ihdr_le_firstline = 1,  //1,le first ; 0, se first
 	.sensor_mode_num = 5,	  //support sensor mode num
 
-	.cap_delay_frame = 3,		//enter capture delay frame num
-	.pre_delay_frame = 1,		//enter preview delay frame num
-	.video_delay_frame = 1, 	//enter video delay frame num
-	.hs_video_delay_frame = 1,	//enter high speed video  delay frame num
-	.slim_video_delay_frame = 1,//enter slim video delay frame num
+	.cap_delay_frame = 2,		//enter capture delay frame num
+	.pre_delay_frame = 2,		//enter preview delay frame num
+	.video_delay_frame = 2, 	//enter video delay frame num
+	.hs_video_delay_frame = 2,	//enter high speed video  delay frame num
+	.slim_video_delay_frame = 2,//enter slim video delay frame num
 
 	.isp_driving_current = ISP_DRIVING_4MA, //mclk driving current
 	.sensor_interface_type = SENSOR_INTERFACE_TYPE_MIPI,//sensor_interface_type
@@ -176,7 +171,7 @@ static imgsensor_info_struct imgsensor_info = {
 	.sensor_output_dataformat = SENSOR_OUTPUT_FORMAT_RAW_R,//sensor output first pixel color
 	.mclk = 24,//mclk value, suggest 24 or 26 for 24Mhz or 26Mhz
 	.mipi_lane_num = SENSOR_MIPI_4_LANE,//mipi lane num
-	.i2c_addr_table = {0x34, 0x20, 0xff},//record sensor support all write id addr, only supprt 4must end with 0xff
+	.i2c_addr_table = {0x34, 0xff},//record sensor support all write id addr, only supprt 4must end with 0xff
 };
 
 
@@ -197,8 +192,7 @@ static imgsensor_struct imgsensor = {
 
 #define IMX258_HDR_TYPE (0x00)
 #define IMX258_BINNING_TYPE (0x10)
-#define IMX258_NOPDAF_TYPE	(0x30)
-kal_uint16 imx258_type = 0;/*0x00=HDR type, 0x10=binning type*/
+static kal_uint16 imx258_type = 0;/*0x00=HDR type, 0x10=binning type*/
 /* Sensor output window information */
 /*according toIMX258 datasheet p53 image cropping*/
 static SENSOR_WINSIZE_INFO_STRUCT imgsensor_winsize_info[10] =
@@ -208,16 +202,8 @@ static SENSOR_WINSIZE_INFO_STRUCT imgsensor_winsize_info[10] =
 	 { 4208, 3120,	  8,  	0, 4192, 3120, 1048,  780 , 0000, 0000, 1048,	780,	  0,	0, 1048,  780}, //hight speed video
 	 { 4208, 3120,	  4,	0, 4200, 3120, 2100,  1560, 0000, 0000, 2100,  1560,	  0,	0, 2100, 1560}};// slim video
 
-static SENSOR_WINSIZE_INFO_STRUCT imgsensor_winsize_info_Binning[10] =
-	{{ 4208, 3120,	  4,	0, 4200, 3120, 2100,  1560, 0000, 0000, 2100,  1560,	  0,	0, 2100, 1560}, // Preview
-	 { 4208, 3120,	  4,	0, 4200, 3120, 4200,  3120, 0000, 0000, 4200,  3120,	  0,	0, 4200, 3120}, // capture
-	 { 4208, 3120,	  4,	0, 4200, 3120, 4200,  3120, 0000, 0000, 4200,  3120,	  0,	0, 4200, 3120}, // video
-	 //{ 4208, 3120,	  0,  592, 4208, 1920, 1048,  480 , 0000, 0000, 1048,	480,	  0,	0, 1048,  480}, //hight speed video
-	 { 4208, 3120,	  8,  	0, 4192, 3120, 1048,  780 , 0000, 0000, 1048,	780,	  0,	0, 1048,  780},
-	 { 4208, 3120,	  4,	0, 4200, 3120, 2100,  1560, 0000, 0000, 2100,  1560,	  0,	0, 2100, 1560}};// slim video
-
-
 /*VC1 for HDR(DT=0X35) , VC2 for PDAF(DT=0X36), unit : 8bit*/
+/* HDR Mode VC information*/
 static SENSOR_VC_INFO_STRUCT SENSOR_VC_INFO[3]=
 {
 	/* Preview mode setting */
@@ -233,7 +219,7 @@ static SENSOR_VC_INFO_STRUCT SENSOR_VC_INFO[3]=
 	0x00, 0x2b, 0x1070, 0x0C30, 0x01, 0x00, 0x0000, 0x0000,
 	0x02, 0x2f, 0x0000, 0x0000, 0x03, 0x00, 0x0000, 0x0000}
 };
-
+/*HDR mode PD position information*/
 static SET_PD_BLOCK_INFO_T imgsensor_pd_info =
 {
     .i4OffsetX = 24,
@@ -276,7 +262,6 @@ static SET_PD_BLOCK_INFO_T imgsensor_pd_info_Binning =
     .i4PosL = {{30,31},{46,31},{37,52},{53,52}},//{{30,29},{46,29},{30,31},{46,31},{37,52},{53,52},{37,54},{53,54}},//{{27,30},{43,30},{34,49},{50,49}},
     .i4PosR = {{29,36},{45,36},{38,47},{54,47}},//{{29,36},{45,36},{29,38},{45,38},{38,45},{54,45},{38,47},{54,47}},//{{26,33},{42,33},{35,46},{51,46}},
 };
-
 
 #define IMX258MIPI_MaxGainIndex (154)
 kal_uint16 IMX258MIPI_sensorGainMapping[IMX258MIPI_MaxGainIndex][2] ={
@@ -435,9 +420,83 @@ kal_uint16 IMX258MIPI_sensorGainMapping[IMX258MIPI_MaxGainIndex][2] ={
 	{993,479},
 	{1024,480}
 };
-static kal_uint8 SPC_data_done = false;
-static kal_uint8 IMX258MIPI_SPC_Data[126];
 
+#define IMX258MIPI_MaxGainIndex2 (72)
+kal_uint16 IMX258MIPI_sensorGainMapping2[IMX258MIPI_MaxGainIndex2][2] ={
+	{72,0x0120 },
+	{80,0x0140 },
+	{88,0x0160 },
+	{96,0x0180 },
+	{104,0x01A0},
+	{112,0x01C0},
+	{120,0x01E0},
+	{128,0x0200},
+	{136,0x0220},
+	{144,0x0240},
+	{152,0x0260},
+	{160,0x0280},
+	{168,0x02A0},
+	{176,0x02C0},
+	{184,0x02E0},
+	{192,0x0300},
+	{200,0x0320},
+	{208,0x0340},
+	{216,0x0360},
+	{224,0x0380},
+	{232,0x03A0},
+	{240,0x03C0},
+	{248,0x03E0},
+	{256,0x0400},
+	{264,0x0420},
+	{272,0x0440},
+	{280,0x0460},
+	{288,0x0480},
+	{296,0x04A0},
+	{304,0x04C0},
+	{312,0x04E0},
+	{320,0x0500},
+	{328,0x0520},
+	{336,0x0540},
+	{344,0x0560},
+	{352,0x0580},
+	{360,0x05A0},
+	{368,0x05C0},
+	{376,0x05E0},
+	{384,0x0600},
+	{392,0x0620},
+	{400,0x0640},
+	{408,0x0660},
+	{416,0x0680},
+	{424,0x06A0},
+	{432,0x06C0},
+	{440,0x06E0},
+	{448,0x0700},
+	{456,0x0720},
+	{464,0x0740},
+	{472,0x0760},
+	{480,0x0780},
+	{488,0x07A0},
+	{496,0x07C0},
+	{504,0x07E0},
+	{512,0x0800},
+	{520,0x0820},
+	{528,0x0840},
+	{536,0x0860},
+	{544,0x0880},
+	{552,0x08A0},
+	{560,0x08C0},
+	{568,0x08E0},
+	{576,0x0900},
+	{584,0x0920},
+	{592,0x0940},
+	{600,0x0960},
+	{608,0x0980},
+	{616,0x09A0},
+	{624,0x09C0},
+	{632,0x09E0},
+	{640,0x0A00},
+
+};
 
 /*
 static kal_uint16 read_cmos_sensor(kal_uint32 addr)
@@ -470,18 +529,17 @@ static kal_uint16 read_cmos_sensor(kal_uint32 addr)
 #define write_cmos_sensor(addr, para) iWriteReg((u16) addr , (u32) para , 1,  imgsensor.i2c_write_id)
 
 
-//extern bool read_imx258_eeprom( kal_uint16 addr, BYTE* data, kal_uint32 size);
+extern bool read_imx258_eeprom( kal_uint16 addr, BYTE* data, kal_uint32 size);
 extern bool read_imx258_eeprom_SPC( kal_uint16 addr, BYTE* data, kal_uint32 size);
-extern bool read_imx258_otp_eeprom( kal_uint16 addr, BYTE* data, kal_uint32 size);
 
+static kal_uint8 IMX258MIPI_SPC_Data[126];
+static kal_uint8 SPC_data_done = false;
 static void load_imx258_SPC_Data(void)
 {
 	kal_uint16 i;
-	if(SPC_data_done == false)
-	{
-		if(!read_imx258_eeprom_SPC(0x0F73,IMX258MIPI_SPC_Data,126))
-		{
-			LOG_INF("load imx258 failed\n");
+	if ( SPC_data_done == false ) {
+		if (!read_imx258_eeprom_SPC(0x0CDF,IMX258MIPI_SPC_Data,126)) {
+			LOG_INF("imx258 load spc fail\n");
 			return;
 		}
 		SPC_data_done = true;
@@ -525,7 +583,7 @@ static kal_uint32 return_sensor_id(void)
 			 if(read_cmos_sensor(0x0A01) == 0x01)
 			 {
 			 	 imx258_type = read_cmos_sensor(0x0A2E);
-				 LOG_INF("imx258 type = 0x%x(0x00=HDR,0x10=binning,0x30=No PDAF)", imx258_type);
+				 LOG_INF("imx258 type = 0x%x(0x00=HDR,0x10=binning)", imx258_type);
 				 return (kal_uint16)((read_cmos_sensor(0x0A26) << 4) | (read_cmos_sensor(0x0A27) >> 4));
 			 }
 		}
@@ -536,7 +594,7 @@ static kal_uint32 return_sensor_id(void)
 }
 static void set_max_framerate(UINT16 framerate,kal_bool min_framelength_en)
 {
-	//kal_int16 dummy_line;  //gy 0225
+	//kal_int16 dummy_line;
 	kal_uint32 frame_length = imgsensor.frame_length;
 	//unsigned long flags;
 
@@ -564,58 +622,91 @@ static void set_max_framerate(UINT16 framerate,kal_bool min_framelength_en)
 }	/*	set_max_framerate  */
 
 
-static void set_shutter(kal_uint16 shutter)
+static void set_shutter(unsigned long long shutter)
 {
-    unsigned long flags;
-    kal_uint16 realtime_fps = 0;
-    spin_lock_irqsave(&imgsensor_drv_lock, flags);
-    imgsensor.shutter = shutter;
-    spin_unlock_irqrestore(&imgsensor_drv_lock, flags);
+	int longexposure_times = 0;
+	kal_uint32 framelength1 = read_cmos_sensor(0x0340);
+	kal_uint32 framelength2 = read_cmos_sensor(0x3041);
+	unsigned long long count_shutter = shutter;
+	unsigned long flags;
+	kal_uint16 realtime_fps = 0;
 
-    //write_shutter(shutter);
-    /* 0x3500, 0x3501, 0x3502 will increase VBLANK to get exposure larger than frame exposure */
-    /* AE doesn't update sensor gain at capture mode, thus extra exposure lines must be updated here. */
-
-    // OV Recommend Solution
-    // if shutter bigger than frame_length, should extend frame length first
-    spin_lock(&imgsensor_drv_lock);
-    if (shutter > imgsensor.min_frame_length - imgsensor_info.margin)
-        imgsensor.frame_length = shutter + imgsensor_info.margin;
-    else
-        imgsensor.frame_length = imgsensor.min_frame_length;
-    if (imgsensor.frame_length > imgsensor_info.max_frame_length)
-        imgsensor.frame_length = imgsensor_info.max_frame_length;
-    spin_unlock(&imgsensor_drv_lock);
-    shutter = (shutter < imgsensor_info.min_shutter) ? imgsensor_info.min_shutter : shutter;
-    shutter = (shutter > (imgsensor_info.max_frame_length - imgsensor_info.margin)) ? (imgsensor_info.max_frame_length - imgsensor_info.margin) : shutter;
-
-    if (imgsensor.autoflicker_en) {
-        realtime_fps = imgsensor.pclk / imgsensor.line_length * 10 / imgsensor.frame_length;
-        if(realtime_fps >= 297 && realtime_fps <= 305)
-            set_max_framerate(296,0);
-        else if(realtime_fps >= 147 && realtime_fps <= 150)
-            set_max_framerate(146,0);
-        else {
-        // Extend frame length
- 		write_cmos_sensor(0x0104, 0x01);
-		write_cmos_sensor(0x0340, imgsensor.frame_length >> 8);
-		write_cmos_sensor(0x0341, imgsensor.frame_length & 0xFF);
-		write_cmos_sensor(0x0104, 0x00);
-        }
-    } else {
-        // Extend frame length
+    LOG_INF("lxd:Enter! shutter=%lld\n", shutter);
+	while(count_shutter>0xFFF0)
+	{
+		count_shutter =count_shutter/2;
+		longexposure_times++;
+	}
+	if(longexposure_times>0)
+	{
+		// Update Shutter
+		//shutter = 0xFFF0;
 		write_cmos_sensor(0x0104, 0x01);
-		write_cmos_sensor(0x0340, imgsensor.frame_length >> 8);
-		write_cmos_sensor(0x0341, imgsensor.frame_length & 0xFF);
-		write_cmos_sensor(0x0104, 0x00);
-    }
+		write_cmos_sensor(0x0202, (count_shutter >> 8) & 0xFF);
+		write_cmos_sensor(0x0203, count_shutter  & 0xFF);
 
-    // Update Shutter
-	write_cmos_sensor(0x0104, 0x01);
-    write_cmos_sensor(0x0202, (shutter >> 8) & 0xFF);
-    write_cmos_sensor(0x0203, shutter  & 0xFF);
-    write_cmos_sensor(0x0104, 0x00);
-    LOG_INF("Exit! shutter =%d, framelength =%d\n", shutter,imgsensor.frame_length);
+		write_cmos_sensor(0x0350, 0x01);
+		write_cmos_sensor(0x3002, longexposure_times & 0x07);
+		write_cmos_sensor(0x0340, 0xFF);
+		write_cmos_sensor(0x0341, 0xF0);
+		write_cmos_sensor(0x0104, 0x00);
+
+		LOG_INF("lxd!--1 shutter =%lld, longexposure_times=%d,framelength1=%x,framelength2=%x\n", shutter,longexposure_times,
+			framelength1,framelength2);
+	}
+	else
+	{
+	    spin_lock_irqsave(&imgsensor_drv_lock, flags);
+	    imgsensor.shutter = shutter;
+	    spin_unlock_irqrestore(&imgsensor_drv_lock, flags);
+
+        write_cmos_sensor(0x0350, 0x00);
+        write_cmos_sensor(0x3002, 0x00);
+	    //write_shutter(shutter);
+	    /* 0x3500, 0x3501, 0x3502 will increase VBLANK to get exposure larger than frame exposure */
+	    /* AE doesn't update sensor gain at capture mode, thus extra exposure lines must be updated here. */
+
+	    // OV Recommend Solution
+	    // if shutter bigger than frame_length, should extend frame length first
+	    spin_lock(&imgsensor_drv_lock);
+	    if (shutter > imgsensor.min_frame_length - imgsensor_info.margin)
+	        imgsensor.frame_length = shutter + imgsensor_info.margin;
+	    else
+	        imgsensor.frame_length = imgsensor.min_frame_length;
+	    if (imgsensor.frame_length > imgsensor_info.max_frame_length)
+	        imgsensor.frame_length = imgsensor_info.max_frame_length;
+	    spin_unlock(&imgsensor_drv_lock);
+	    shutter = (shutter < imgsensor_info.min_shutter) ? imgsensor_info.min_shutter : shutter;
+	    shutter = (shutter > (imgsensor_info.max_frame_length - imgsensor_info.margin)) ? (imgsensor_info.max_frame_length - imgsensor_info.margin) : shutter;
+
+	    if (imgsensor.autoflicker_en) {
+	        realtime_fps = imgsensor.pclk / imgsensor.line_length * 10 / imgsensor.frame_length;
+	        if(realtime_fps >= 297 && realtime_fps <= 305)
+	            set_max_framerate(296,0);
+	        else if(realtime_fps >= 147 && realtime_fps <= 150)
+	            set_max_framerate(146,0);
+	        else {
+	        // Extend frame length
+	 		write_cmos_sensor(0x0104, 0x01);
+			write_cmos_sensor(0x0340, imgsensor.frame_length >> 8);
+			write_cmos_sensor(0x0341, imgsensor.frame_length & 0xFF);
+			write_cmos_sensor(0x0104, 0x00);
+	        }
+	    } else {
+	        // Extend frame length
+			write_cmos_sensor(0x0104, 0x01);
+			write_cmos_sensor(0x0340, imgsensor.frame_length >> 8);
+			write_cmos_sensor(0x0341, imgsensor.frame_length & 0xFF);
+			write_cmos_sensor(0x0104, 0x00);
+	    }
+
+	    // Update Shutter
+		write_cmos_sensor(0x0104, 0x01);
+	    write_cmos_sensor(0x0202, (shutter >> 8) & 0xFF);
+	    write_cmos_sensor(0x0203, shutter  & 0xFF);
+	    write_cmos_sensor(0x0104, 0x00);
+	    LOG_INF("Exit! shutter =%lld, framelength =%d\n", shutter,imgsensor.frame_length);
+	}
 
 }    /*    set_shutter */
 
@@ -631,10 +722,31 @@ static kal_uint16 gain2reg(const kal_uint16 gain)
             break;
         }
     }
+	if(i==IMX258MIPI_MaxGainIndex){
+		i--;
+	}
     if(gain != IMX258MIPI_sensorGainMapping[i][0])
             LOG_INF("Gain mapping don't correctly:%d %d \n", gain, IMX258MIPI_sensorGainMapping[i][0]);
     return IMX258MIPI_sensorGainMapping[i][1];
 }
+
+static kal_uint16 gain2reg2(const kal_uint16 gain)
+{
+    kal_uint8 i;
+
+    for (i = 0; i < IMX258MIPI_MaxGainIndex2; i++) {
+        if(gain <= IMX258MIPI_sensorGainMapping2[i][0]){
+            break;
+        }
+    }
+	if(i==IMX258MIPI_MaxGainIndex2){
+		i--;
+	}
+    if(gain != IMX258MIPI_sensorGainMapping2[i][0])
+            LOG_INF("Gain mapping don't correctly:%d %d \n", gain, IMX258MIPI_sensorGainMapping2[i][0]);
+    return IMX258MIPI_sensorGainMapping2[i][1];
+}
+
 
 /*************************************************************************
 * FUNCTION
@@ -662,32 +774,69 @@ static kal_uint16 set_gain(kal_uint16 gain)
 	/* Total gain = M + N /16 X   */
 
 	//
-	if (gain < BASEGAIN || gain > 16 * BASEGAIN) {
+	if (gain < BASEGAIN || gain > 160 * BASEGAIN) {
 		LOG_INF("Error gain setting");
 
 	if (gain < BASEGAIN)
 		gain = BASEGAIN;
-	else if (gain > 16 * BASEGAIN)
-		gain = 16 * BASEGAIN;
+	else if (gain > 160 * BASEGAIN)
+		gain = 160 * BASEGAIN;
 	}
 
-	reg_gain = gain2reg(gain);
-	spin_lock(&imgsensor_drv_lock);
-	imgsensor.gain = reg_gain;
-	spin_unlock(&imgsensor_drv_lock);
-	LOG_INF("gain = %d , reg_gain = 0x%x\n ", gain, reg_gain);
+	if(gain <= 16 * BASEGAIN)
+	{
+		reg_gain = gain2reg(gain);
+		spin_lock(&imgsensor_drv_lock);
+		imgsensor.gain = reg_gain;
+		spin_unlock(&imgsensor_drv_lock);
+		LOG_INF("gain = %d , reg_gain = 0x%x\n ", gain, reg_gain);
 
-	write_cmos_sensor(0x0104, 0x01);
-	write_cmos_sensor(0x0204, (reg_gain>>8)& 0xFF);
-	write_cmos_sensor(0x0205, reg_gain & 0xFF);
-	write_cmos_sensor(0x0104, 0x00);
+		write_cmos_sensor(0x0104, 0x01);
+		write_cmos_sensor(0x0204, (reg_gain>>8)& 0xFF);
+		write_cmos_sensor(0x0205, reg_gain & 0xFF);
+
+		write_cmos_sensor(0x020E, 0x01);
+		write_cmos_sensor(0x020F, 0x00);
+		write_cmos_sensor(0x0210, 0x01);
+		write_cmos_sensor(0x0211, 0x00);
+		write_cmos_sensor(0x0212, 0x01);
+		write_cmos_sensor(0x0213, 0x00);
+		write_cmos_sensor(0x0214, 0x01);
+		write_cmos_sensor(0x0215, 0x00);
+
+		write_cmos_sensor(0x0104, 0x00);
+	}
+	else if(gain < 160 * BASEGAIN)
+	{
+		kal_uint16 gain2;
+		kal_uint16 reg_gain2;
+
+		gain2 = gain * BASEGAIN / 1024;
+		reg_gain2 = gain2reg2(gain2);
+
+		write_cmos_sensor(0x0104, 0x01);
+
+		write_cmos_sensor(0x0204, 0x01);
+		write_cmos_sensor(0x0205, 0xE0);
+
+		write_cmos_sensor(0x020E, (reg_gain2>>8)&0xFF);
+		write_cmos_sensor(0x020F, reg_gain2 & 0xFF);
+		write_cmos_sensor(0x0210, (reg_gain2>>8)&0xFF);
+		write_cmos_sensor(0x0211, reg_gain2 & 0xFF);
+		write_cmos_sensor(0x0212, (reg_gain2>>8)&0xFF);
+		write_cmos_sensor(0x0213, reg_gain2 & 0xFF);
+		write_cmos_sensor(0x0214, (reg_gain2>>8)&0xFF);
+		write_cmos_sensor(0x0215, reg_gain2 & 0xFF);
+
+		write_cmos_sensor(0x0104, 0x00);
+	}
 
 	return gain;
 }	/*	set_gain  */
 
 static void ihdr_write_shutter_gain(kal_uint16 le, kal_uint16 se, kal_uint16 gain)
 {
-	//kal_uint8 iRation; //0225 gy
+
 	kal_uint16 realtime_fps = 0;
 	kal_uint16 reg_gain;
 	LOG_INF("le:0x%x, se:0x%x, gain:0x%x\n",le,se,gain);
@@ -725,24 +874,6 @@ static void ihdr_write_shutter_gain(kal_uint16 le, kal_uint16 se, kal_uint16 gai
 	/* Short exposure */
 	write_cmos_sensor(0x0224, (se >> 8) & 0xFF);
 	write_cmos_sensor(0x0225, se  & 0xFF);
-
-	#if 0
-	iRation = ((10 * le / se) + 5) / 10;
-    if(iRation < 2)
-        iRation = 1;
-    else if(iRation < 4)
-        iRation = 2;
-    else if(iRation < 8)
-        iRation = 4;
-    else if(iRation < 16)
-        iRation = 8;
-    else if(iRation < 32)
-        iRation = 16;
-    else
-        iRation = 1;
-    write_cmos_sensor(0x0222,iRation);
-	#endif
-	
 	reg_gain = gain2reg(gain);
 	spin_lock(&imgsensor_drv_lock);
 	imgsensor.gain = reg_gain;
@@ -807,7 +938,7 @@ static void night_mode(kal_bool enable)
 	/*	preview_setting  */
 static void imx258_ImageQuality_Setting(void)
 {
-	if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
+	if(imx258_type == IMX258_HDR_TYPE)
 	{
 		write_cmos_sensor(0x94C7,0xFF);
 		write_cmos_sensor(0x94C8,0xFF);
@@ -867,7 +998,7 @@ static void imx258_ImageQuality_Setting(void)
 		write_cmos_sensor(0x7FCC,0x01);
 		write_cmos_sensor(0x7B78,0x00);
 
-		//modify at 2015/10/21		
+//added at 2015/10/21
 		write_cmos_sensor(0x9401,0x35);
 		write_cmos_sensor(0x9403,0x23);
 		write_cmos_sensor(0x9405,0x23);
@@ -999,6 +1130,14 @@ static void imx258_ImageQuality_Setting(void)
 		write_cmos_sensor(0x9250,0x50);
 		write_cmos_sensor(0x9251,0x3C);
 		write_cmos_sensor(0x9252,0x14);
+		write_cmos_sensor(0x94DC,0x20);
+		write_cmos_sensor(0x94DD,0x20);
+		write_cmos_sensor(0x94DE,0x20);
+		write_cmos_sensor(0x95DC,0x20);
+		write_cmos_sensor(0x95DD,0x20);
+		write_cmos_sensor(0x95DE,0x20);
+		write_cmos_sensor(0x7FB0,0x00);
+		write_cmos_sensor(0x9010,0x3E);
 	}
 	else if(imx258_type == IMX258_BINNING_TYPE)
 	{
@@ -1294,14 +1433,14 @@ static void sensor_init(void)
 	write_cmos_sensor(0x5F05,0xED);
 
 	imx258_ImageQuality_Setting();
-	if(imx258_type != IMX258_NOPDAF_TYPE)
-	{
-		load_imx258_SPC_Data();
-		write_cmos_sensor(0x7BC8,0x01);//SPC
-		write_cmos_sensor(0x7BC9,0x01);
-	}
+
+	load_imx258_SPC_Data();
+	write_cmos_sensor(0x7BC8,0x01);
+
+	write_cmos_sensor(0x7BC9,0x01);
 	write_cmos_sensor(0x0B05,0x01);//BPC
 	write_cmos_sensor(0x0B06,0x01);
+
 	write_cmos_sensor(0x0100,0x00);
 }	/*	sensor_init  */
 
@@ -1383,7 +1522,7 @@ static void preview_setting(void)
 	write_cmos_sensor(0x020E,0x01);
 	write_cmos_sensor(0x020F,0x00);
 
-	if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
+	if(imx258_type == IMX258_HDR_TYPE)
 	{
 		write_cmos_sensor(0x7BCD,0x00);
 	}
@@ -1403,105 +1542,6 @@ static void preview_setting(void)
 
 }
 
-#if 0
-static void capture_setting_pdaf(void)
-{
-	LOG_INF("capture_setting_pdaf E\n");
-	write_cmos_sensor(0x0100,0x00);
-	mdelay(10);
-
-	write_cmos_sensor(0x0112,0x0A);
-	write_cmos_sensor(0x0113,0x0A);
-	write_cmos_sensor(0x0114,0x03);
-
-	write_cmos_sensor(0x0301,0x05);
-	write_cmos_sensor(0x0303,0x02);
-	write_cmos_sensor(0x0305,0x04);
-	write_cmos_sensor(0x0306,0x00);
-	write_cmos_sensor(0x0307,0xD8);
-	write_cmos_sensor(0x0309,0x0A);
-	write_cmos_sensor(0x030B,0x01);
-	write_cmos_sensor(0x030D,0x02);
-	write_cmos_sensor(0x030E,0x00);
-	write_cmos_sensor(0x030F,0xD8);
-	write_cmos_sensor(0x0310,0x00);
-	write_cmos_sensor(0x0820,0x14);
-	write_cmos_sensor(0x0821,0x40);
-	write_cmos_sensor(0x0822,0x00);
-	write_cmos_sensor(0x0823,0x00);
-
-	write_cmos_sensor(0x0342,0x14);
-	write_cmos_sensor(0x0343,0xE8);
-
-	write_cmos_sensor(0x0340,0x0C);
-	write_cmos_sensor(0x0341,0x9C);
-
-	write_cmos_sensor(0x0344,0x00);
-	write_cmos_sensor(0x0345,0x00);
-	write_cmos_sensor(0x0346,0x00);
-	write_cmos_sensor(0x0347,0x00);
-	write_cmos_sensor(0x0348,0x10);
-	write_cmos_sensor(0x0349,0x6F);
-	write_cmos_sensor(0x034A,0x0C);
-	write_cmos_sensor(0x034B,0x2F);
-
-	write_cmos_sensor(0x0381,0x01);
-	write_cmos_sensor(0x0383,0x01);
-	write_cmos_sensor(0x0385,0x01);
-	write_cmos_sensor(0x0387,0x01);
-	write_cmos_sensor(0x0900,0x00);
-	write_cmos_sensor(0x0901,0x11);
-	write_cmos_sensor(0x0902,0x00);
-
-	write_cmos_sensor(0x0401,0x00);
-	write_cmos_sensor(0x0404,0x00);
-	write_cmos_sensor(0x0405,0x10);
-	write_cmos_sensor(0x0408,0x00);
-	write_cmos_sensor(0x0409,0x00);
-	write_cmos_sensor(0x040A,0x00);
-	write_cmos_sensor(0x040B,0x00);
-	write_cmos_sensor(0x040C,0x10);
-	write_cmos_sensor(0x040D,0x70);
-	write_cmos_sensor(0x040E,0x0C);
-	write_cmos_sensor(0x040F,0x30);
-	write_cmos_sensor(0x3038,0x00);
-	write_cmos_sensor(0x303A,0x00);
-	write_cmos_sensor(0x303B,0x10);
-	write_cmos_sensor(0x300D,0x00);
-
-	write_cmos_sensor(0x034C,0x10);
-	write_cmos_sensor(0x034D,0x70);
-	write_cmos_sensor(0x034E,0x0C);
-	write_cmos_sensor(0x034F,0x30);
-
-	write_cmos_sensor(0x0202,0x0C);
-	write_cmos_sensor(0x0203,0x92);
-
-	write_cmos_sensor(0x0204,0x00);
-	write_cmos_sensor(0x0205,0x00);
-	write_cmos_sensor(0x020E,0x01);
-	write_cmos_sensor(0x020F,0x00);
-
-	write_cmos_sensor(0x94DC,0x20);
-	write_cmos_sensor(0x94DD,0x20);
-	write_cmos_sensor(0x94DE,0x20);
-	write_cmos_sensor(0x95DC,0x20);
-	write_cmos_sensor(0x95DD,0x20);
-	write_cmos_sensor(0x95DE,0x20);
-	write_cmos_sensor(0x7FB0,0x00);
-	write_cmos_sensor(0x9010,0x3E);
-
-	LOG_INF("read 0x3030\n");
-	write_cmos_sensor(0x3030,0x01);//pdaf enable
-	LOG_INF("0x3030=%d\n",read_cmos_sensor(0x3030));
-	write_cmos_sensor(0x3032,0x01); /* 0:raw10, 1:BYTE2 */
-	write_cmos_sensor(0x0220,0x00);
-
-	write_cmos_sensor(0x0100,0x01);
-	mdelay(10);
-}
-
-#endif
 static void capture_setting(kal_uint16 curretfps, kal_uint8  pdaf_mode)
 {
 	LOG_INF("capture E\n");
@@ -1584,8 +1624,14 @@ static void capture_setting(kal_uint16 curretfps, kal_uint8  pdaf_mode)
 		write_cmos_sensor(0x020E,0x01);
 		write_cmos_sensor(0x020F,0x00);
 
-		write_cmos_sensor(0x7BCD,0x00);
-
+		if(imx258_type == IMX258_HDR_TYPE)
+		{
+			write_cmos_sensor(0x7BCD,0x00);
+		}
+		else if(imx258_type == IMX258_BINNING_TYPE)
+		{
+			write_cmos_sensor(0x7BCD,0x00);
+		}
 
 		if(pdaf_mode == 1) {
 			LOG_INF("read 0x3030\n");
@@ -1682,8 +1728,14 @@ static void capture_setting(kal_uint16 curretfps, kal_uint8  pdaf_mode)
 		write_cmos_sensor(0x020E,0x01);
 		write_cmos_sensor(0x020F,0x00);
 
-		write_cmos_sensor(0x7BCD,0x00);
-
+		if(imx258_type == IMX258_HDR_TYPE)
+		{
+			write_cmos_sensor(0x7BCD,0x00);
+		}
+		else if(imx258_type == IMX258_BINNING_TYPE)
+		{
+			write_cmos_sensor(0x7BCD,0x00);
+		}
 
 		if(pdaf_mode == 1) {
 			LOG_INF("read 0x3030\n");
@@ -1781,8 +1833,14 @@ static void capture_setting(kal_uint16 curretfps, kal_uint8  pdaf_mode)
 		write_cmos_sensor(0x020E,0x01);
 		write_cmos_sensor(0x020F,0x00);
 
-		write_cmos_sensor(0x7BCD,0x00);
-
+		if(imx258_type == IMX258_HDR_TYPE)
+		{
+			write_cmos_sensor(0x7BCD,0x00);
+		}
+		else if(imx258_type == IMX258_BINNING_TYPE)
+		{
+			write_cmos_sensor(0x7BCD,0x00);
+		}
 
 		if(pdaf_mode == 1) {
 			LOG_INF("read 0x3030\n");
@@ -2000,7 +2058,7 @@ static void PIP15fps_capture_setting()
 
 }
 #endif
-static void normal_video_setting(kal_uint16 currefps)
+static void normal_video_setting(kal_uint16 currefps, kal_uint8  pdaf_mode)
 {
 	LOG_INF("normal video E\n");
 	LOG_INF("E! currefps:%d\n",currefps);
@@ -2031,7 +2089,7 @@ static void normal_video_setting(kal_uint16 currefps)
 	write_cmos_sensor(0x0343,0xE8);
 
 	write_cmos_sensor(0x0340,0x0C);
-	if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
+	if(imx258_type == IMX258_HDR_TYPE)
 		write_cmos_sensor(0x0341,0x9C);
 	else if(imx258_type == IMX258_BINNING_TYPE)
 		write_cmos_sensor(0x0341,0x98);
@@ -2075,7 +2133,7 @@ static void normal_video_setting(kal_uint16 currefps)
 	write_cmos_sensor(0x034F,0x30);
 
 	write_cmos_sensor(0x0202,0x0C);
-	if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
+	if(imx258_type == IMX258_HDR_TYPE)
 		write_cmos_sensor(0x0203,0x92);
 	else if(imx258_type == IMX258_BINNING_TYPE)
 		write_cmos_sensor(0x0203,0x8E);
@@ -2108,102 +2166,6 @@ static void normal_video_setting(kal_uint16 currefps)
 }
 static void hs_video_setting(void)
 {
-#if 0
-	LOG_INF("hs_video E\n");
-
-	write_cmos_sensor(0x0100,0x00);
-	mdelay(10);
-
-
-	write_cmos_sensor(0x0112,0x0A);
-	write_cmos_sensor(0x0113,0x0A);
-	write_cmos_sensor(0x0114,0x03);
-
-	write_cmos_sensor(0x0301,0x05);
-	write_cmos_sensor(0x0303,0x02);
-	write_cmos_sensor(0x0305,0x04);
-	write_cmos_sensor(0x0306,0x00);
-	write_cmos_sensor(0x0307,0xD8);
-	write_cmos_sensor(0x0309,0x0A);
-	write_cmos_sensor(0x030B,0x01);
-	write_cmos_sensor(0x030D,0x02);
-	write_cmos_sensor(0x030E,0x00);
-	write_cmos_sensor(0x030F,0xD8);
-	write_cmos_sensor(0x0310,0x00);
-	write_cmos_sensor(0x0820,0x14);
-	write_cmos_sensor(0x0821,0x40);
-	write_cmos_sensor(0x0822,0x00);
-	write_cmos_sensor(0x0823,0x00);
-
-	write_cmos_sensor(0x0342,0x14);
-	write_cmos_sensor(0x0343,0xE8);
-
-	write_cmos_sensor(0x0340,0x03);
-	write_cmos_sensor(0x0341,0x26);
-
-	write_cmos_sensor(0x0344,0x00);
-	write_cmos_sensor(0x0345,0x00);
-	write_cmos_sensor(0x0346,0x01);
-	write_cmos_sensor(0x0347,0xB0);
-	write_cmos_sensor(0x0348,0x10);
-	write_cmos_sensor(0x0349,0x6F);
-	write_cmos_sensor(0x034A,0x0A);
-	write_cmos_sensor(0x034B,0x7F);
-
-	write_cmos_sensor(0x0381,0x01);
-	write_cmos_sensor(0x0383,0x01);
-	write_cmos_sensor(0x0385,0x03);
-	write_cmos_sensor(0x0387,0x03);
-	write_cmos_sensor(0x0900,0x01);
-	write_cmos_sensor(0x0901,0x12);
-	write_cmos_sensor(0x0902,0x02);
-
-	write_cmos_sensor(0x0401,0x01);
-	write_cmos_sensor(0x0404,0x00);
-	write_cmos_sensor(0x0405,0x30);
-	write_cmos_sensor(0x0408,0x00);
-	write_cmos_sensor(0x0409,0x00);
-	write_cmos_sensor(0x040A,0x00);
-	write_cmos_sensor(0x040B,0x00);
-	write_cmos_sensor(0x040C,0x10);
-	write_cmos_sensor(0x040D,0x70);
-	write_cmos_sensor(0x040E,0x02);
-	write_cmos_sensor(0x040F,0xF0);
-	write_cmos_sensor(0x3038,0x00);
-	write_cmos_sensor(0x303A,0x00);
-	write_cmos_sensor(0x303B,0x10);
-	write_cmos_sensor(0x300D,0x00);
-
-	write_cmos_sensor(0x034C,0x05);
-	write_cmos_sensor(0x034D,0x78);
-	write_cmos_sensor(0x034E,0x02);
-	write_cmos_sensor(0x034F,0xF0);
-
-	write_cmos_sensor(0x0202,0x03);
-	write_cmos_sensor(0x0203,0x1C);
-
-	write_cmos_sensor(0x0204,0x00);
-	write_cmos_sensor(0x0205,0x00);
-	write_cmos_sensor(0x020E,0x01);
-	write_cmos_sensor(0x020F,0x00);
-
-	if(imx258_type == IMX258_HDR_TYPE)
-	{
-		write_cmos_sensor(0x7BCD,0x00);
-	}
-	else if(imx258_type == IMX258_BINNING_TYPE)
-	{
-		write_cmos_sensor(0x7BCD,0x01);
-	}
-
-
-	write_cmos_sensor(0x3030,0x00);
-	write_cmos_sensor(0x3032,0x00);
-	write_cmos_sensor(0x0220,0x00);
-
-	write_cmos_sensor(0x0100,0x01);
-	//mdelay(10);
-#elif 0
 	LOG_INF("hs_video E\n");
 
 	write_cmos_sensor(0x0100,0x00);
@@ -2217,110 +2179,15 @@ static void hs_video_setting(void)
 	write_cmos_sensor(0x0303,0x02);
 	write_cmos_sensor(0x0305,0x04);
 	write_cmos_sensor(0x0306,0x00);
-	write_cmos_sensor(0x0307,0xC8);
+	write_cmos_sensor(0x0307,0xD8);//0xC8 //PLL_IVT_MPY[7:0]
 	write_cmos_sensor(0x0309,0x0A);
 	write_cmos_sensor(0x030B,0x01);
 	write_cmos_sensor(0x030D,0x02);
 	write_cmos_sensor(0x030E,0x00);
 	write_cmos_sensor(0x030F,0xD8);
 	write_cmos_sensor(0x0310,0x00);
-	write_cmos_sensor(0x0820,0x12);
-	write_cmos_sensor(0x0821,0xC0);
-	write_cmos_sensor(0x0822,0x00);
-	write_cmos_sensor(0x0823,0x00);
-
-	write_cmos_sensor(0x0342,0x14);
-	write_cmos_sensor(0x0343,0xE8);
-
-	write_cmos_sensor(0x0340,0x02);
-	write_cmos_sensor(0x0341,0xEA);
-
-	write_cmos_sensor(0x0344,0x00);
-	write_cmos_sensor(0x0345,0x00);
-	write_cmos_sensor(0x0346,0x02);
-	write_cmos_sensor(0x0347,0x50);
-	write_cmos_sensor(0x0348,0x10);
-	write_cmos_sensor(0x0349,0x6F);
-	write_cmos_sensor(0x034A,0x09);
-	write_cmos_sensor(0x034B,0xCF);
-
-	write_cmos_sensor(0x0381,0x01);
-	write_cmos_sensor(0x0383,0x01);
-	write_cmos_sensor(0x0385,0x03);
-	write_cmos_sensor(0x0387,0x03);
-	write_cmos_sensor(0x0900,0x01);
-	write_cmos_sensor(0x0901,0x12);
-	write_cmos_sensor(0x0902,0x02);
-
-	write_cmos_sensor(0x0401,0x01);
-	write_cmos_sensor(0x0404,0x00);
-	write_cmos_sensor(0x0405,0x40);
-	write_cmos_sensor(0x0408,0x00);
-	write_cmos_sensor(0x0409,0x00);
-	write_cmos_sensor(0x040A,0x00);
-	write_cmos_sensor(0x040B,0x00);
-	write_cmos_sensor(0x040C,0x10);
-	write_cmos_sensor(0x040D,0x70);
-	write_cmos_sensor(0x040E,0x02);
-	write_cmos_sensor(0x040F,0x80);
-	write_cmos_sensor(0x3038,0x00);
-	write_cmos_sensor(0x303A,0x00);
-	write_cmos_sensor(0x303B,0x10);
-	write_cmos_sensor(0x300D,0x01);
-
-	write_cmos_sensor(0x034C,0x04);
-	write_cmos_sensor(0x034D,0x18);
-	write_cmos_sensor(0x034E,0x01);
-	write_cmos_sensor(0x034F,0xE0);
-
-	write_cmos_sensor(0x0202,0x02);
-	write_cmos_sensor(0x0203,0xE0);
-
-	write_cmos_sensor(0x0204,0x00);
-	write_cmos_sensor(0x0205,0x00);
-	write_cmos_sensor(0x020E,0x01);
-	write_cmos_sensor(0x020F,0x00);
-
-	if(imx258_type == IMX258_HDR_TYPE)
-	{
-		write_cmos_sensor(0x7BCD,0x00);
-	}
-	else if(imx258_type == IMX258_BINNING_TYPE)
-	{
-		write_cmos_sensor(0x7BCD,0x01);
-	}
-
-	write_cmos_sensor(0x3030,0x00);
-	LOG_INF("0x3030=%d\n",read_cmos_sensor(0x3030));
-	write_cmos_sensor(0x3032,0x00);
-	LOG_INF("0x3032=%d\n",read_cmos_sensor(0x3032));
-	write_cmos_sensor(0x0220,0x00);
-
-	write_cmos_sensor(0x0100,0x01);
-	mdelay(10);
-#else
-	LOG_INF("hs_video E\n");
-	
-	write_cmos_sensor(0x0100,0x00);
-	mdelay(10);
-
-	write_cmos_sensor(0x0112,0x0A);
-	write_cmos_sensor(0x0113,0x0A);
-	write_cmos_sensor(0x0114,0x03);
-
-	write_cmos_sensor(0x0301,0x05);
-	write_cmos_sensor(0x0303,0x02);
-	write_cmos_sensor(0x0305,0x04);
-	write_cmos_sensor(0x0306,0x00);
-	write_cmos_sensor(0x0307,0xD8);//0xc8  //PLL_IVT_MPY[7:0]
-	write_cmos_sensor(0x0309,0x0A);
-	write_cmos_sensor(0x030B,0x01);
-	write_cmos_sensor(0x030D,0x02);
-	write_cmos_sensor(0x030E,0x00);
-	write_cmos_sensor(0x030F,0xD8);
-	write_cmos_sensor(0x0310,0x00);
-	write_cmos_sensor(0x0820,0x14);//0x12   //Output Date rate[31:24]
-	write_cmos_sensor(0x0821,0x40);//0xc0  //Output Date rate[23:16]
+	write_cmos_sensor(0x0820,0x14);//0x12 //Output Date rate[31:24]
+	write_cmos_sensor(0x0821,0x40);//0xC0 //Output Date rate[23:16]
 	write_cmos_sensor(0x0822,0x00);
 	write_cmos_sensor(0x0823,0x00);
 
@@ -2376,7 +2243,7 @@ static void hs_video_setting(void)
 	write_cmos_sensor(0x020E,0x01);
 	write_cmos_sensor(0x020F,0x00);
 
-	if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
+	if(imx258_type == IMX258_HDR_TYPE)
 	{
 		write_cmos_sensor(0x7BCD,0x00);
 	}
@@ -2392,107 +2259,13 @@ static void hs_video_setting(void)
 	write_cmos_sensor(0x0220,0x00);
 
 	write_cmos_sensor(0x0100,0x01);
-	mdelay(10);	
-#endif
+	mdelay(10);
+
 
 }
 
 static void slim_video_setting(void)
 {
-#if 0
-	LOG_INF("slim_video E\n");
-
-	write_cmos_sensor(0x0100,0x00);
-	mdelay(10);
-
-	write_cmos_sensor(0x0112,0x0A);
-	write_cmos_sensor(0x0113,0x0A);
-	write_cmos_sensor(0x0114,0x03);
-
-	write_cmos_sensor(0x0301,0x05);
-	write_cmos_sensor(0x0303,0x02);
-	write_cmos_sensor(0x0305,0x04);
-	write_cmos_sensor(0x0306,0x00);
-	write_cmos_sensor(0x0307,0x42);
-	write_cmos_sensor(0x0309,0x0A);
-	write_cmos_sensor(0x030B,0x01);
-	write_cmos_sensor(0x030D,0x02);
-	write_cmos_sensor(0x030E,0x00);
-	write_cmos_sensor(0x030F,0xD8);
-	write_cmos_sensor(0x0310,0x00);
-	write_cmos_sensor(0x0820,0x06);
-	write_cmos_sensor(0x0821,0x30);
-	write_cmos_sensor(0x0822,0x00);
-	write_cmos_sensor(0x0823,0x00);
-
-	write_cmos_sensor(0x0342,0x14);
-	write_cmos_sensor(0x0343,0xE8);
-
-	write_cmos_sensor(0x0340,0x03);
-	write_cmos_sensor(0x0341,0xDA);
-
-	write_cmos_sensor(0x0344,0x00);
-	write_cmos_sensor(0x0345,0x00);
-	write_cmos_sensor(0x0346,0x01);
-	write_cmos_sensor(0x0347,0xB0);
-	write_cmos_sensor(0x0348,0x10);
-	write_cmos_sensor(0x0349,0x6F);
-	write_cmos_sensor(0x034A,0x0A);
-	write_cmos_sensor(0x034B,0x7F);
-
-	write_cmos_sensor(0x0381,0x01);
-	write_cmos_sensor(0x0383,0x01);
-	write_cmos_sensor(0x0385,0x03);
-	write_cmos_sensor(0x0387,0x03);
-	write_cmos_sensor(0x0900,0x01);
-	write_cmos_sensor(0x0901,0x12);
-	write_cmos_sensor(0x0902,0x02);
-
-	write_cmos_sensor(0x0401,0x01);
-	write_cmos_sensor(0x0404,0x00);
-	write_cmos_sensor(0x0405,0x30);
-	write_cmos_sensor(0x0408,0x00);
-	write_cmos_sensor(0x0409,0x00);
-	write_cmos_sensor(0x040A,0x00);
-	write_cmos_sensor(0x040B,0x00);
-	write_cmos_sensor(0x040C,0x10);
-	write_cmos_sensor(0x040D,0x70);
-	write_cmos_sensor(0x040E,0x02);
-	write_cmos_sensor(0x040F,0xF0);
-	write_cmos_sensor(0x3038,0x00);
-	write_cmos_sensor(0x303A,0x00);
-	write_cmos_sensor(0x303B,0x10);
-	write_cmos_sensor(0x300D,0x00);
-
-	write_cmos_sensor(0x034C,0x05);
-	write_cmos_sensor(0x034D,0x78);
-	write_cmos_sensor(0x034E,0x02);
-	write_cmos_sensor(0x034F,0xF0);
-
-	write_cmos_sensor(0x0202,0x03);
-	write_cmos_sensor(0x0203,0xD0);
-
-	write_cmos_sensor(0x0204,0x00);
-	write_cmos_sensor(0x0205,0x00);
-	write_cmos_sensor(0x020E,0x01);
-	write_cmos_sensor(0x020F,0x00);
-
-	if(imx258_type == IMX258_HDR_TYPE)
-	{
-		write_cmos_sensor(0x7BCD,0x00);
-	}
-	else if(imx258_type == IMX258_BINNING_TYPE)
-	{
-		write_cmos_sensor(0x7BCD,0x01);
-	}
-
-	write_cmos_sensor(0x3030,0x00);
-	write_cmos_sensor(0x3032,0x00);
-	write_cmos_sensor(0x0220,0x00);
-
-	write_cmos_sensor(0x0100,0x01);
-	mdelay(10);
-#else
 	LOG_INF("slim video E\n");
     write_cmos_sensor(0x0100,0x00);
 	mdelay(10);
@@ -2569,7 +2342,7 @@ static void slim_video_setting(void)
 	write_cmos_sensor(0x020E,0x01);
 	write_cmos_sensor(0x020F,0x00);
 
-	if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
+	if(imx258_type == IMX258_HDR_TYPE)
 	{
 		write_cmos_sensor(0x7BCD,0x00);
 	}
@@ -2586,7 +2359,6 @@ static void slim_video_setting(void)
 
     write_cmos_sensor(0x0100,0x01);
 	mdelay(10);
-#endif
 
 }
 
@@ -2639,8 +2411,6 @@ static kal_uint32 get_imgsensor_id(UINT32 *sensor_id)
 		s_DEVINFO_ccm->device_used = DEVINFO_USED;
 		devinfo_check_add_device(s_DEVINFO_ccm);
 	#endif
-	            LOG_INF("[zbl] check otp info\n");
-	            IMX258CheckLensVersion();
 				return ERROR_NONE;
 			}
             LOG_INF("Read sensor id fail, write id: 0x%x, id: 0x%x\n", imgsensor.i2c_write_id,*sensor_id);
@@ -2860,7 +2630,7 @@ static kal_uint32 normal_video(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 	imgsensor.autoflicker_en = KAL_FALSE;
 	spin_unlock(&imgsensor_drv_lock);
 	LOG_INF("ihdr enable :%d\n", imgsensor.ihdr_en);
-	normal_video_setting(imgsensor.current_fps);
+	normal_video_setting(imgsensor.current_fps,imgsensor.pdaf_mode);
 	return ERROR_NONE;
 }	/*	normal_video   */
 
@@ -2973,11 +2743,9 @@ static kal_uint32 get_info(MSDK_SCENARIO_ID_ENUM scenario_id,
 	sensor_info->SensorModeNum = imgsensor_info.sensor_mode_num;
 
 	if(imx258_type == IMX258_HDR_TYPE)
-		sensor_info->PDAF_Support = 2; /*0: NO PDAF, 1: PDAF Raw Data mode, 2:PDAF VC mode, 3:PDAF Binning mode*/
-	else if(imx258_type == IMX258_BINNING_TYPE)
-		sensor_info->PDAF_Support = 3; 
+		sensor_info->PDAF_Support = 2; /*0: NO PDAF, 1: PDAF Raw Data mode, 2:PDAF VC mode(HDR), 3:PDAF VC mode(Binning)*/
 	else
-		sensor_info->PDAF_Support = 0;
+		sensor_info->PDAF_Support = 3; /*0: NO PDAF, 1: PDAF Raw Data mode, 2:PDAF VC mode(HDR), 3:PDAF VC mode(Binning)*/
 
 	sensor_info->SensorMIPILaneNumber = imgsensor_info.mipi_lane_num;
 	sensor_info->SensorClockFreq = imgsensor_info.mclk;
@@ -3238,7 +3006,7 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 	UINT32 *feature_return_para_32=(UINT32 *) feature_para;
 	UINT32 *feature_data_32=(UINT32 *) feature_para;
 	unsigned long long *feature_data=(unsigned long long *) feature_para;
-    //unsigned long long *feature_return_para=(unsigned long long *) feature_para;
+//    unsigned long long *feature_return_para=(unsigned long long *) feature_para;
 
 	SET_PD_BLOCK_INFO_T *PDAFinfo;
 
@@ -3258,7 +3026,7 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 			*feature_para_len=4;
 			break;
 		case SENSOR_FEATURE_SET_ESHUTTER:
-			set_shutter((UINT16)*feature_data);
+			set_shutter(*feature_data);
 			break;
 		case SENSOR_FEATURE_SET_NIGHTMODE:
 			night_mode((BOOL) *feature_data);
@@ -3298,8 +3066,8 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 			get_default_framerate_by_scenario((MSDK_SCENARIO_ID_ENUM)*feature_data, (MUINT32 *)(uintptr_t)(*(feature_data+1)));
 			break;
 		case SENSOR_FEATURE_GET_PDAF_DATA:
-			printk("SENSOR_FEATURE_GET_PDAF_DATA\n");
-			read_imx258_otp_eeprom((kal_uint16 )(*feature_data),(char*)(uintptr_t)(*(feature_data+1)),(kal_uint32)(*(feature_data+2)));
+			LOG_INF("SENSOR_FEATURE_GET_PDAF_DATA\n");
+			read_imx258_eeprom((kal_uint16 )(*feature_data),(char*)(uintptr_t)(*(feature_data+1)),(kal_uint32)(*(feature_data+2)));
 			break;
 		case SENSOR_FEATURE_SET_TEST_PATTERN:
 			set_test_pattern_mode((BOOL)*feature_data);
@@ -3327,41 +3095,26 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 
 			switch (*feature_data_32) {
 				case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-					if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
-						memcpy((void *)wininfo,(void *)&imgsensor_winsize_info[1],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
-					else
-						memcpy((void *)wininfo,(void *)&imgsensor_winsize_info_Binning[1],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
+					memcpy((void *)wininfo,(void *)&imgsensor_winsize_info[1],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
 					break;
 				case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-					if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
-						memcpy((void *)wininfo,(void *)&imgsensor_winsize_info[2],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
-					else
-						memcpy((void *)wininfo,(void *)&imgsensor_winsize_info_Binning[2],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
+					memcpy((void *)wininfo,(void *)&imgsensor_winsize_info[2],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
 					break;
 				case MSDK_SCENARIO_ID_HIGH_SPEED_VIDEO:
-					if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
-						memcpy((void *)wininfo,(void *)&imgsensor_winsize_info[3],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
-					else
-					memcpy((void *)wininfo,(void *)&imgsensor_winsize_info_Binning[3],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
+					memcpy((void *)wininfo,(void *)&imgsensor_winsize_info[3],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
 					break;
 				case MSDK_SCENARIO_ID_SLIM_VIDEO:
-					if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
-						memcpy((void *)wininfo,(void *)&imgsensor_winsize_info[4],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
-					else
-						memcpy((void *)wininfo,(void *)&imgsensor_winsize_info_Binning[4],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
+					memcpy((void *)wininfo,(void *)&imgsensor_winsize_info[4],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
 					break;
 				case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
 				default:
-					if((imx258_type == IMX258_HDR_TYPE)||(imx258_type == IMX258_NOPDAF_TYPE))
-						memcpy((void *)wininfo,(void *)&imgsensor_winsize_info[1],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
-					else
-						memcpy((void *)wininfo,(void *)&imgsensor_winsize_info_Binning[0],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
+					memcpy((void *)wininfo,(void *)&imgsensor_winsize_info[0],sizeof(SENSOR_WINSIZE_INFO_STRUCT));
 					break;
 			}
 			break;
 			#if 1
 		case SENSOR_FEATURE_GET_PDAF_INFO:
-			LOG_INF("SENSOR_FEATURE_GET_PDAF_INFO scenarioId:%d\n", (int)*feature_data);
+			LOG_INF("SENSOR_FEATURE_GET_PDAF_INFO scenarioId:%llu\n", *feature_data);
 			PDAFinfo= (SET_PD_BLOCK_INFO_T *)(uintptr_t)(*(feature_data+1));
 
 			switch (*feature_data) {
@@ -3411,7 +3164,7 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
             break;
 		/*PDAF CMD*/
 		case SENSOR_FEATURE_GET_SENSOR_PDAF_CAPACITY:
-			LOG_INF("SENSOR_FEATURE_GET_SENSOR_PDAF_CAPACITY scenarioId:%d\n", (int)*feature_data);
+			LOG_INF("SENSOR_FEATURE_GET_SENSOR_PDAF_CAPACITY scenarioId:%llu\n", *feature_data);
 			//PDAF capacity enable or not, 2p8 only full size support PDAF
 			switch (*feature_data) {
 				case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
