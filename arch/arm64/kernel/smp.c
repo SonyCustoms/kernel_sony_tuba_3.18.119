@@ -66,6 +66,9 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/ipi.h>
 
+DEFINE_PER_CPU_READ_MOSTLY(int, cpu_number);
+EXPORT_PER_CPU_SYMBOL(cpu_number);
+
 /*
  * as from 2.5, kernels no longer have an init_tasks structure
  * so we need some other way of telling a new secondary core
@@ -114,6 +117,9 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	 * We need to tell the secondary core where to find its stack and the
 	 * page tables.
 	 */
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+	secondary_data.task = idle;
+#endif
 	secondary_data.stack = task_stack_page(idle) + THREAD_START_SP;
 	__flush_dcache_area(&secondary_data, sizeof(secondary_data));
 
@@ -153,6 +159,9 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	TIMESTAMP_REC(hotplug_ts_rec, TIMESTAMP_FILTER,  cpu, 0, 0, 0);
 #endif
 
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+	secondary_data.task = NULL;
+#endif
 	secondary_data.stack = NULL;
 
 	return ret;
@@ -170,8 +179,10 @@ static void smp_store_cpu_info(unsigned int cpuid)
 asmlinkage void secondary_start_kernel(void)
 {
 	struct mm_struct *mm = &init_mm;
-	unsigned int cpu = smp_processor_id();
+	unsigned int cpu;
 
+	cpu = task_cpu(current);
+	set_my_cpu_offset(per_cpu_offset(cpu));
 	aee_rr_rec_hotplug_footprint(cpu, 1);
 
 	/*
@@ -180,12 +191,8 @@ asmlinkage void secondary_start_kernel(void)
 	 */
 	atomic_inc(&mm->mm_count);
 	current->active_mm = mm;
-	cpumask_set_cpu(cpu, mm_cpumask(mm));
 
 	aee_rr_rec_hotplug_footprint(cpu, 2);
-
-	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
-	printk("CPU%u: Booted secondary processor\n", cpu);
 
 	aee_rr_rec_hotplug_footprint(cpu, 3);
 
@@ -197,7 +204,8 @@ asmlinkage void secondary_start_kernel(void)
 
 	aee_rr_rec_hotplug_footprint(cpu, 4);
 
-	flush_tlb_all();
+	local_flush_tlb_all();
+	cpu_set_default_tcr_t0sz();
 
 	aee_rr_rec_hotplug_footprint(cpu, 5);
 
@@ -208,6 +216,13 @@ asmlinkage void secondary_start_kernel(void)
 	trace_hardirqs_off();
 
 	aee_rr_rec_hotplug_footprint(cpu, 7);
+
+	/*
+	 * If the system has established the capabilities, make sure
+	 * this CPU ticks all of those. If it doesn't, the CPU will
+	 * fail to come online.
+	 */
+	verify_local_cpu_capabilities();
 
 	if (cpu_ops[cpu]->cpu_postboot)
 		cpu_ops[cpu]->cpu_postboot();
@@ -244,6 +259,10 @@ asmlinkage void secondary_start_kernel(void)
 	 * the CPU migration code to notice that the CPU is online
 	 * before we continue.
 	 */
+#if 0
+	pr_info("CPU%u: Booted secondary processor [%08x]\n",
+					 cpu, read_cpuid_id());
+#endif
 	set_cpu_online(cpu, true);
 
 	aee_rr_rec_hotplug_footprint(cpu, 12);
@@ -251,8 +270,6 @@ asmlinkage void secondary_start_kernel(void)
 	complete(&cpu_running);
 
 	aee_rr_rec_hotplug_footprint(cpu, 13);
-
-	local_dbg_enable();
 
 	aee_rr_rec_hotplug_footprint(cpu, 14);
 
@@ -321,11 +338,6 @@ int __cpu_disable(void)
 
 	aee_rr_rec_hotplug_footprint(cpu, 73);
 
-	/*
-	 * Remove this CPU from the vm mask set of all processes.
-	 */
-	clear_tasks_mm_cpumask(cpu);
-
 	aee_rr_rec_hotplug_footprint(cpu, 74);
 
 	return 0;
@@ -356,10 +368,11 @@ void __cpu_die(unsigned int cpu)
 		pr_crit("CPU%u: cpu didn't die\n", cpu);
 		return;
 	}
+#if 0
 #ifndef CONFIG_ARCH_MT6797
 	pr_notice("CPU%u: shutdown\n", cpu);
 #endif
-
+#endif
 	/*
 	 * Now that the dying CPU is beyond the point of no return w.r.t.
 	 * in-kernel synchronisation, try to get the firwmare to help us to
@@ -426,12 +439,14 @@ void __init smp_cpus_done(unsigned int max_cpus)
 	pr_info("SMP: Total of %d processors activated (%lu.%02lu BogoMIPS).\n",
 			num_online_cpus(), bogosum / (500000/HZ),
 			(bogosum / (5000/HZ)) % 100);
+	setup_cpu_features();
 	apply_alternatives_all();
 }
 
 void __init smp_prepare_boot_cpu(void)
 {
 	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
+	cpuinfo_store_boot_cpu();
 }
 
 /*
@@ -572,6 +587,8 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 	for_each_possible_cpu(cpu) {
 		if (max_cpus == 0)
 			break;
+
+		per_cpu(cpu_number, cpu) = cpu;
 
 		if (cpu == smp_processor_id())
 			continue;

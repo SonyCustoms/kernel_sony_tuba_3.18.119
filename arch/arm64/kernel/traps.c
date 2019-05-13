@@ -32,11 +32,17 @@
 #include <linux/syscalls.h>
 
 #include <asm/atomic.h>
+#include <asm/barrier.h>
 #include <asm/debug-monitors.h>
+#include <asm/esr.h>
 #include <asm/traps.h>
+#include <asm/stack_pointer.h>
 #include <asm/stacktrace.h>
 #include <asm/exception.h>
 #include <asm/system_misc.h>
+#include <asm/esr.h>
+#include <asm/sysreg.h>
+#include <mt-plat/aee.h>
 #include <mt-plat/mtk_hooks.h>
 
 #ifdef CONFIG_CCI_KLOG
@@ -51,7 +57,7 @@ static const char *handler[]= {
 	"Error"
 };
 
-int show_unhandled_signals = 1;
+int show_unhandled_signals = 0;
 
 /*
  * Dump out the contents of some memory nicely...
@@ -65,8 +71,7 @@ static void dump_mem(const char *lvl, const char *str, unsigned long bottom,
 
 	/*
 	 * We need to switch to kernel mode so that we can use __get_user
-	 * to safely read from kernel space.  Note that we now dump the
-	 * code first, just in case the backtrace kills us.
+	 * to safely read from kernel space.
 	 */
 	fs = get_fs();
 	set_fs(KERNEL_DS);
@@ -103,25 +108,16 @@ static void dump_backtrace_entry(unsigned long where, unsigned long stack)
 			 stack + sizeof(struct pt_regs));
 }
 
-static void dump_instr(const char *lvl, struct pt_regs *regs)
+static void __dump_instr(const char *lvl, struct pt_regs *regs)
 {
 	unsigned long addr = instruction_pointer(regs);
-	mm_segment_t fs;
 	char str[sizeof("00000000 ") * 5 + 2 + 1], *p = str;
 	int i;
-
-	/*
-	 * We need to switch to kernel mode so that we can use __get_user
-	 * to safely read from kernel space.  Note that we now dump the
-	 * code first, just in case the backtrace kills us.
-	 */
-	fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	for (i = -4; i < 1; i++) {
 		unsigned int val, bad;
 
-		bad = __get_user(val, &((u32 *)addr)[i]);
+		bad = get_user(val, &((u32 *)addr)[i]);
 
 		if (!bad)
 			p += sprintf(p, i == 0 ? "(%08x) " : "%08x ", val);
@@ -131,18 +127,32 @@ static void dump_instr(const char *lvl, struct pt_regs *regs)
 		}
 	}
 	printk("%sCode: %s\n", lvl, str);
+}
 
-	set_fs(fs);
+static void dump_instr(const char *lvl, struct pt_regs *regs)
+{
+	if (!user_mode(regs)) {
+		mm_segment_t fs = get_fs();
+		set_fs(KERNEL_DS);
+		__dump_instr(lvl, regs);
+		set_fs(fs);
+	} else {
+		__dump_instr(lvl, regs);
+	}
 }
 
 static void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 {
 	struct stackframe frame;
+	unsigned long irq_stack_ptr = IRQ_STACK_PTR(smp_processor_id());
 
 	pr_debug("%s(regs = %p tsk = %p)\n", __func__, regs, tsk);
 
 	if (!tsk)
 		tsk = current;
+
+	if (!try_get_task_stack(tsk))
+		return;
 
 	if (regs) {
 		frame.fp = regs->regs[29];
@@ -164,13 +174,22 @@ static void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 	pr_emerg("Call trace:\n");
 	while (1) {
 		unsigned long where = frame.pc;
+		unsigned long stack;
 		int ret;
 
 		ret = unwind_frame(&frame);
 		if (ret < 0)
 			break;
-		dump_backtrace_entry(where, frame.sp);
+		stack = frame.sp;
+
+		if (stack < irq_stack_ptr &&
+		    (stack + sizeof(struct pt_regs)) > irq_stack_ptr)
+			stack = IRQ_STACK_TO_TASK_STACK(irq_stack_ptr);
+
+		dump_backtrace_entry(where, stack);
 	}
+
+	put_task_stack(tsk);
 }
 
 void show_stack(struct task_struct *tsk, unsigned long *sp)
@@ -184,16 +203,11 @@ void show_stack(struct task_struct *tsk, unsigned long *sp)
 #else
 #define S_PREEMPT ""
 #endif
-#ifdef CONFIG_SMP
 #define S_SMP " SMP"
-#else
-#define S_SMP ""
-#endif
 
-static int __die(const char *str, int err, struct thread_info *thread,
-		 struct pt_regs *regs)
+static int __die(const char *str, int err, struct pt_regs *regs)
 {
-	struct task_struct *tsk = thread->task;
+	struct task_struct *tsk = current;
 	static int die_counter;
 	int ret;
 
@@ -208,7 +222,8 @@ static int __die(const char *str, int err, struct thread_info *thread,
 	print_modules();
 	__show_regs(regs);
 	pr_emerg("Process %.*s (pid: %d, stack limit = 0x%p)\n",
-		 TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), thread + 1);
+		 TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk),
+		 end_of_stack(tsk));
 
 	if (!user_mode(regs) || in_interrupt()) {
 		dump_mem(KERN_EMERG, "Stack: ", regs->sp,
@@ -366,6 +381,38 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 	arm64_notify_die("Oops - undefined instruction", regs, &info, 0);
 }
 
+static void cntvct_read_handler(unsigned int esr, struct pt_regs *regs)
+{
+	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
+
+	isb();
+	if (rt != 31)
+		regs->regs[rt] = arch_counter_get_cntvct();
+	regs->pc += 4;
+}
+
+static void cntfrq_read_handler(unsigned int esr, struct pt_regs *regs)
+{
+	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
+
+	if (rt != 31)
+		regs->regs[rt] = read_sysreg(cntfrq_el0);
+	regs->pc += 4;
+}
+
+asmlinkage void __exception do_sysinstr(unsigned int esr, struct pt_regs *regs)
+{
+	if ((esr & ESR_ELx_SYS64_ISS_SYS_OP_MASK) == ESR_ELx_SYS64_ISS_SYS_CNTVCT) {
+		cntvct_read_handler(esr, regs);
+		return;
+	} else if ((esr & ESR_ELx_SYS64_ISS_SYS_OP_MASK) == ESR_ELx_SYS64_ISS_SYS_CNTFRQ) {
+		cntfrq_read_handler(esr, regs);
+		return;
+	}
+
+	do_undefinstr(regs);
+}
+
 long compat_arm_syscall(struct pt_regs *regs);
 
 asmlinkage long do_ni_syscall(struct pt_regs *regs)
@@ -390,6 +437,52 @@ asmlinkage long do_ni_syscall(struct pt_regs *regs)
 	return sys_ni_syscall();
 }
 
+static const char *esr_class_str[] = {
+	[0 ... ESR_ELx_EC_MAX]		= "UNRECOGNIZED EC",
+	[ESR_ELx_EC_UNKNOWN]		= "Unknown/Uncategorized",
+	[ESR_ELx_EC_WFx]		= "WFI/WFE",
+	[ESR_ELx_EC_CP15_32]		= "CP15 MCR/MRC",
+	[ESR_ELx_EC_CP15_64]		= "CP15 MCRR/MRRC",
+	[ESR_ELx_EC_CP14_MR]		= "CP14 MCR/MRC",
+	[ESR_ELx_EC_CP14_LS]		= "CP14 LDC/STC",
+	[ESR_ELx_EC_FP_ASIMD]		= "ASIMD",
+	[ESR_ELx_EC_CP10_ID]		= "CP10 MRC/VMRS",
+	[ESR_ELx_EC_CP14_64]		= "CP14 MCRR/MRRC",
+	[ESR_ELx_EC_ILL]		= "PSTATE.IL",
+	[ESR_ELx_EC_SVC32]		= "SVC (AArch32)",
+	[ESR_ELx_EC_HVC32]		= "HVC (AArch32)",
+	[ESR_ELx_EC_SMC32]		= "SMC (AArch32)",
+	[ESR_ELx_EC_SVC64]		= "SVC (AArch64)",
+	[ESR_ELx_EC_HVC64]		= "HVC (AArch64)",
+	[ESR_ELx_EC_SMC64]		= "SMC (AArch64)",
+	[ESR_ELx_EC_SYS64]		= "MSR/MRS (AArch64)",
+	[ESR_ELx_EC_IMP_DEF]		= "EL3 IMP DEF",
+	[ESR_ELx_EC_IABT_LOW]		= "IABT (lower EL)",
+	[ESR_ELx_EC_IABT_CUR]		= "IABT (current EL)",
+	[ESR_ELx_EC_PC_ALIGN]		= "PC Alignment",
+	[ESR_ELx_EC_DABT_LOW]		= "DABT (lower EL)",
+	[ESR_ELx_EC_DABT_CUR]		= "DABT (current EL)",
+	[ESR_ELx_EC_SP_ALIGN]		= "SP Alignment",
+	[ESR_ELx_EC_FP_EXC32]		= "FP (AArch32)",
+	[ESR_ELx_EC_FP_EXC64]		= "FP (AArch64)",
+	[ESR_ELx_EC_SERROR]		= "SError",
+	[ESR_ELx_EC_BREAKPT_LOW]	= "Breakpoint (lower EL)",
+	[ESR_ELx_EC_BREAKPT_CUR]	= "Breakpoint (current EL)",
+	[ESR_ELx_EC_SOFTSTP_LOW]	= "Software Step (lower EL)",
+	[ESR_ELx_EC_SOFTSTP_CUR]	= "Software Step (current EL)",
+	[ESR_ELx_EC_WATCHPT_LOW]	= "Watchpoint (lower EL)",
+	[ESR_ELx_EC_WATCHPT_CUR]	= "Watchpoint (current EL)",
+	[ESR_ELx_EC_BKPT32]		= "BKPT (AArch32)",
+	[ESR_ELx_EC_VECTOR32]		= "Vector catch (AArch32)",
+	[ESR_ELx_EC_BRK64]		= "BRK (AArch64)",
+};
+
+const char *esr_get_class_string(u32 esr)
+{
+	return esr_class_str[ESR_ELx_EC(esr)];
+}
+
+
 #ifdef CONFIG_MEDIATEK_SOLUTION
 static void (*async_abort_handler)(struct pt_regs *regs, void *);
 static void *async_abort_priv;
@@ -404,9 +497,26 @@ int register_async_abort_handler(void (*fn)(struct pt_regs *regs, void *), void 
 #endif
 
 /*
- * bad_mode handles the impossible case in the exception vector.
+ * bad_mode handles the impossible case in the exception vector. This is always
+ * fatal.
  */
 asmlinkage void bad_mode(struct pt_regs *regs, int reason, unsigned int esr)
+{
+	console_verbose();
+
+	pr_crit("Bad mode in %s handler detected, code 0x%08x -- %s\n",
+		handler[reason], esr, esr_get_class_string(esr));
+
+	die("Oops - bad mode", regs, 0);
+	local_irq_disable();
+	panic("bad mode");
+}
+
+/*
+ * bad_el0_sync handles unexpected, but potentially recoverable synchronous
+ * exceptions taken from EL0. Unlike bad_mode, this returns.
+ */
+asmlinkage void bad_el0_sync(struct pt_regs *regs, int reason, unsigned int esr)
 {
 	siginfo_t info;
 	void __user *pc = (void __user *)instruction_pointer(regs);
@@ -423,6 +533,9 @@ asmlinkage void bad_mode(struct pt_regs *regs, int reason, unsigned int esr)
 
 	pr_crit("Bad mode in %s handler detected, code 0x%08x\n",
 		handler[reason], esr);
+
+	pr_crit("Bad EL0 synchronous exception detected on CPU%d, code 0x%08x\n",
+		smp_processor_id(), esr);
 	__show_regs(regs);
 
 	info.si_signo = SIGILL;
@@ -430,7 +543,10 @@ asmlinkage void bad_mode(struct pt_regs *regs, int reason, unsigned int esr)
 	info.si_code  = ILL_ILLOPC;
 	info.si_addr  = pc;
 
-	arm64_notify_die("Oops - bad mode", regs, &info, 0);
+	current->thread.fault_address = 0;
+	current->thread.fault_code = 0;
+
+	force_sig_info(info.si_signo, &info, current);
 }
 
 void __pte_error(const char *file, int line, unsigned long val)
