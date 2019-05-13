@@ -610,6 +610,15 @@ config CRYPTO_SHA256_SPARC64
 	  SHA-256 secure hash standard (DFIPS 180-2) implemented
 	  using sparc64 crypto instructions, when available.
 
+config CRYPTO_SHA2_ARM_CE
+	tristate "SHA-224/256 digest algorithm (ARM v8 Crypto Extensions)"
+	depends on ARM && KERNEL_MODE_NEON
+	select CRYPTO_SHA256
+	select CRYPTO_HASH
+	help
+	  SHA-256 secure hash standard (DFIPS 180-2) implemented
+	  using special ARMv8 Crypto Extensions.
+
 config CRYPTO_SHA512
 	tristate "SHA384 and SHA512 digest algorithms"
 	select CRYPTO_HASH
@@ -856,15 +865,14 @@ config CRYPTO_AES_ARM_BS
 	  This implementation does not rely on any lookup tables so it is
 	  believed to be invulnerable to cache timing attacks.
 
-config CRYPTO_AES_ARM32_CE
-	tristate "AES cipher using ARMv8 32bits Crypto Extensions"
+config CRYPTO_AES_ARM_CE
+	tristate "Accelerated AES using ARMv8 Crypto Extensions"
 	depends on ARM && KERNEL_MODE_NEON
+	select CRYPTO_ALGAPI
 	select CRYPTO_ABLK_HELPER
 	help
-	  ARMv8 32bits Crypto Extensions.
-	  AES cipher using ARMv8 32bits Crypto Extensions to
-	  accelerate encryption/decryption.
-	  Such as AES, AES_CBC.
+	  Use an implementation of AES in CBC, CTR and XTS modes that uses
+	  ARMv8 Crypto Extensions
 
 config CRYPTO_ANUBIS
 	tristate "Anubis cipher algorithm"
@@ -1280,6 +1288,27 @@ config CRYPTO_SERPENT_AVX2_X86_64
 
 	  See also:
 	  <http://www.cl.cam.ac.uk/~rja14/serpent.html>
+
+config CRYPTO_SPECK
+	tristate "Speck cipher algorithm"
+	select CRYPTO_ALGAPI
+	help
+	  Speck is a lightweight block cipher that is tuned for optimal
+	  performance in software (rather than hardware).
+
+	  Speck may not be as secure as AES, and should only be used on systems
+	  where AES is not fast enough.
+
+	  See also: <https://eprint.iacr.org/2013/404.pdf>
+
+	  If unsure, say N.
+
+config CRYPTO_SPECK_NEON
+	tristate "NEON accelerated Speck cipher algorithms"
+	depends on ARM && KERNEL_MODE_NEON
+	select CRYPTO_BLKCIPHER
+	select CRYPTO_GF128MUL
+	select CRYPTO_SPECK
 
 config CRYPTO_TEA
 	tristate "TEA, XTEA and XETA cipher algorithms"
