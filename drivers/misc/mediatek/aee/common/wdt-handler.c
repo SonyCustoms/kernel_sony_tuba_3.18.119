@@ -83,6 +83,7 @@ static struct stacks_buffer stacks_buffer_bin[NR_CPUS];
 struct regs_buffer {
 	struct pt_regs regs;
 	int real_len;
+	struct task_struct *tsk;
 };
 static struct regs_buffer regs_buffer_bin[NR_CPUS];
 
@@ -325,7 +326,7 @@ static void aee_save_reg_stack_sram(int cpu)
 		aee_sram_fiq_log(str_buf);
 	}
 
-	mrdump_mini_per_cpu_regs(cpu, &regs_buffer_bin[cpu].regs);
+	mrdump_mini_per_cpu_regs(cpu, &regs_buffer_bin[cpu].regs, regs_buffer_bin[cpu].tsk);
 }
 
 #ifdef CONFIG_SMP
@@ -508,6 +509,7 @@ void aee_wdt_fiq_info(void *arg, void *regs, void *svc_sp)
 	aee_rr_rec_fiq_step(AEE_FIQ_STEP_WDT_FIQ_STACK);
 	aee_wdt_dump_stack_bin(cpu, ((struct pt_regs *)regs)->ARM_sp,
 			       ((struct pt_regs *)regs)->ARM_sp + WDT_SAVE_STACK_SIZE);
+	regs_buffer_bin[cpu].tsk = current;
 	aee_save_reg_stack_sram(cpu);
 
 	if (atomic_xchg(&wdt_enter_fiq, 1) != 0) {

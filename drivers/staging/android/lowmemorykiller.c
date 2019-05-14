@@ -44,6 +44,12 @@
 #include <linux/freezer.h>
 #include <linux/cpu.h>
 
+#define MTK_LMK_USER_EVENT
+
+#ifdef MTK_LMK_USER_EVENT
+#include <linux/miscdevice.h>
+#endif
+
 #if defined(CONFIG_MTK_AEE_FEATURE) && defined(CONFIG_MT_ENG_BUILD)
 #include <mt-plat/aee.h>
 #include <disp_assert_layer.h>
@@ -108,7 +114,7 @@ static int lowmem_minfree_size = 9;
 static int total_low_ratio = 1;
 #endif
 
-static struct task_struct *lowmem_deathpending;
+#define LOWMEM_DEATHPENDING_TIMEOUT (HZ / 2)
 static unsigned long lowmem_deathpending_timeout;
 
 #define lowmem_print(level, x...)			\
@@ -116,24 +122,6 @@ static unsigned long lowmem_deathpending_timeout;
 		if (lowmem_debug_level >= (level))	\
 			pr_info(x);			\
 	} while (0)
-
-static int
-task_notify_func(struct notifier_block *self, unsigned long val, void *data);
-
-static struct notifier_block task_nb = {
-	.notifier_call	= task_notify_func,
-};
-
-static int
-task_notify_func(struct notifier_block *self, unsigned long val, void *data)
-{
-	struct task_struct *task = data;
-
-	if (task == lowmem_deathpending)
-		lowmem_deathpending = NULL;
-
-	return NOTIFY_DONE;
-}
 
 static unsigned long lowmem_count(struct shrinker *s,
 				  struct shrink_control *sc)
@@ -148,6 +136,56 @@ static unsigned long lowmem_count(struct shrinker *s,
 		global_page_state(NR_INACTIVE_ANON) +
 		global_page_state(NR_INACTIVE_FILE);
 }
+
+#ifdef MTK_LMK_USER_EVENT
+static const struct file_operations mtklmk_fops = {
+	.owner = THIS_MODULE,
+};
+
+static struct miscdevice mtklmk_misc = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = "mtklmk",
+	.fops = &mtklmk_fops,
+};
+
+static struct work_struct mtklmk_work;
+static int uevent_adj, uevent_minfree;
+static void mtklmk_async_uevent(struct work_struct *work)
+{
+#define MTKLMK_EVENT_LENGTH	(24)
+	char adj[MTKLMK_EVENT_LENGTH], free[MTKLMK_EVENT_LENGTH];
+	char *envp[3] = { adj, free, NULL };
+
+	snprintf(adj, MTKLMK_EVENT_LENGTH, "OOM_SCORE_ADJ=%d", uevent_adj);
+	snprintf(free, MTKLMK_EVENT_LENGTH, "MINFREE=%d", uevent_minfree);
+	kobject_uevent_env(&mtklmk_misc.this_device->kobj, KOBJ_CHANGE, envp);
+#undef MTKLMK_EVENT_LENGTH
+}
+
+static unsigned int mtklmk_initialized;
+static unsigned int mtklmk_uevent_timeout = 10000; /* ms */
+module_param_named(uevent_timeout, mtklmk_uevent_timeout, uint, 0644);
+static void mtklmk_uevent(int oom_score_adj, int minfree)
+{
+	static unsigned long last_time;
+	unsigned long timeout;
+
+	/* change to use jiffies */
+	timeout = msecs_to_jiffies(mtklmk_uevent_timeout);
+
+	if (!last_time)
+		last_time = jiffies - timeout;
+
+	if (time_before(jiffies, last_time + timeout))
+		return;
+
+	last_time = jiffies;
+
+	uevent_adj = oom_score_adj;
+	uevent_minfree = minfree;
+	schedule_work(&mtklmk_work);
+}
+#endif
 
 static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 {
@@ -169,6 +207,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 
 	int print_extra_info = 0;
 	static unsigned long lowmem_print_extra_info_timeout;
+    int d_state_is_found = 0;
 #if defined(CONFIG_SWAP) && defined(CONFIG_MTK_GMO_RAM_OPTIMIZE)
 	int to_be_aggressive = 0;
 	unsigned long swap_pages = 0;
@@ -184,15 +223,9 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	static unsigned long flm_warn_timeout;
 	int log_offset = 0, log_ret;
 #endif /* CONFIG_MT_ENG_BUILD*/
-	/*
-	* If we already have a death outstanding, then
-	* bail out right away; indicating to vmscan
-	* that we have nothing further to offer on
-	* this pass.
-	*
-	*/
-	if (lowmem_deathpending &&
-	    time_before_eq(jiffies, lowmem_deathpending_timeout))
+
+	/* Do not use in kernel lowmemorykiller */
+	if (IS_ENABLED(CONFIG_MEMCG) && (lowmem_minfree[0] == 0))
 		return SHRINK_STOP;
 
 	/* Check whether it is in cpu_hotplugging */
@@ -240,10 +273,14 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		minfree = lowmem_minfree[i];
 		if (other_free < minfree && other_file < minfree) {
 #if defined(CONFIG_SWAP) && defined(CONFIG_MTK_GMO_RAM_OPTIMIZE)
-			if (to_be_aggressive != 0 && i > 3) {
-				i -= to_be_aggressive;
-				if (i < 3)
-					i = 3;
+			if (totalram_pages < 0x40000) {
+				if (to_be_aggressive != 0 && i > 3) {
+					i -= to_be_aggressive;
+					if (i < 3)
+						i = 3;
+				}
+			} else {
+				to_be_aggressive = 0;
 			}
 #endif
 			min_score_adj = lowmem_adj[i];
@@ -281,7 +318,13 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 
 	selected_oom_score_adj = min_score_adj;
 
-	/* add debug log */
+#ifdef MTK_LMK_USER_EVENT
+	/* Send uevent if needed */
+	if (mtklmk_initialized && current_is_kswapd() && mtklmk_uevent_timeout)
+		mtklmk_uevent(min_score_adj, minfree);
+#endif
+
+	/* More debug log */
 	if (output_expect(enable_candidate_log)) {
 		if (min_score_adj <= lowmem_debug_adj) {
 			if (time_after_eq(jiffies, lowmem_print_extra_info_timeout)) {
@@ -323,6 +366,14 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			continue;
 		}
 #endif
+
+		if (p->state & TASK_UNINTERRUPTIBLE) {
+			lowmem_print(2, "lowmem_scan filter D state process: %d (%s) state:0x%lx\n",
+					p->pid, p->comm, p->state);
+			task_unlock(p);
+			d_state_is_found = 1;
+			continue;
+		}
 
 		if (test_tsk_thread_flag(p, TIF_MEMDIE) &&
 		    time_before_eq(jiffies, lowmem_deathpending_timeout)) {
@@ -450,7 +501,8 @@ log_again:
 		long cache_limit = minfree * (long)(PAGE_SIZE / 1024);
 		long free = other_free * (long)(PAGE_SIZE / 1024);
 		trace_lowmemory_kill(selected, cache_size, cache_limit, free);
-		lowmem_print(1, "Killing '%s' (%d), adj %d, score_adj %hd,\n"
+
+		lowmem_print(1, "Killing '%s' (%d), adj %d, score_adj %hd, state(%ld)\n"
 				"   to free %ldkB on behalf of '%s' (%d) because\n"
 				"   cache %ldkB is below limit %ldkB for oom_score_adj %hd\n"
 				"   Free memory is %ldkB above reserved\n"
@@ -459,7 +511,7 @@ log_again:
 #endif
 				, selected->comm, selected->pid,
 				REVERT_ADJ(selected_oom_score_adj),
-				selected_oom_score_adj,
+				selected_oom_score_adj, selected->state,
 				selected_tasksize * (long)(PAGE_SIZE / 1024),
 				current->comm, current->pid,
 				cache_size, cache_limit,
@@ -469,8 +521,7 @@ log_again:
 				, swap_pages * 4, total_swap_pages * 4, to_be_aggressive
 #endif
 				);
-		lowmem_deathpending = selected;
-		lowmem_deathpending_timeout = jiffies + HZ;
+		lowmem_deathpending_timeout = jiffies + LOWMEM_DEATHPENDING_TIMEOUT;
 		set_tsk_thread_flag(selected, TIF_MEMDIE);
 
 		if (output_expect(enable_candidate_log)) {
@@ -514,7 +565,6 @@ log_again:
 					/* pid_dump = pid_sec_mem; */
 					pid_flm_warn = pid_dump;
 					flm_warn_timeout = jiffies + 60*HZ;
-					lowmem_deathpending = NULL;
 					lowmem_print(1, "'%s' (%d) max RSS, not kill\n",
 								selected->comm, selected->pid);
 					send_sig(SIGSTOP, selected, 0);
@@ -544,6 +594,9 @@ log_again:
 
 		send_sig(SIGKILL, selected, 0);
 		rem += selected_tasksize;
+	} else {
+		if (d_state_is_found == 1)
+			lowmem_print(2, "No selected (full of D-state processes at %d)\n", (int)min_score_adj);
 	}
 
 	lowmem_print(4, "lowmem_scan %lu, %x, return %lu\n",
@@ -566,11 +619,14 @@ static int __init lowmem_init(void)
 #endif
 
 #ifdef CONFIG_ZRAM
+#ifndef CONFIG_MTK_GMO_RAM_OPTIMIZE
 	vm_swappiness = 100;
+#else
+	vm_swappiness = 120;
+#endif
 #endif
 
 
-	task_free_register(&task_nb);
 	register_shrinker(&lowmem_shrinker);
 
 #ifdef CONFIG_HIGHMEM
@@ -580,13 +636,23 @@ static int __init lowmem_init(void)
 			total_low_ratio, totalram_pages, totalhigh_pages);
 #endif
 
+#ifdef MTK_LMK_USER_EVENT
+	/* initialize work for uevent */
+	INIT_WORK(&mtklmk_work, mtklmk_async_uevent);
+
+	/* register as misc device */
+	if (!misc_register(&mtklmk_misc)) {
+		pr_info("%s: successful to register misc device!\n", __func__);
+		mtklmk_initialized = 1;
+	}
+#endif
+
 	return 0;
 }
 
 static void __exit lowmem_exit(void)
 {
 	unregister_shrinker(&lowmem_shrinker);
-	task_free_unregister(&task_nb);
 }
 
 #ifdef CONFIG_ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
@@ -788,4 +854,3 @@ late_initcall(lowmem_init);
 module_exit(lowmem_exit);
 
 MODULE_LICENSE("GPL");
-

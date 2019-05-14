@@ -40,6 +40,8 @@
 #include <linux/compat.h>
 #endif
 #include "kd_flashlight.h"
+#include "kd_flashlight_type.h"
+
 /******************************************************************************
  * Debug configuration
 ******************************************************************************/

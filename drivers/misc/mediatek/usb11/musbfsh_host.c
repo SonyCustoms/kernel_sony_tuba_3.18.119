@@ -51,8 +51,9 @@
 #include "musbfsh_host.h"
 #include "musbfsh_dma.h"
 #include "usb.h"
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 #include "musbfsh_qmu.h"
+#include "mtk11_qmu.h"
 #endif
 
 /* MUSB HOST status 22-mar-2006
@@ -222,7 +223,11 @@ static void musbfsh_ep_program(struct musbfsh *musbfsh, u8 epnum,
 /*
  * Clear TX fifo. Needed to avoid BABBLE errors.
  */
+#ifdef MUSBFSH_QMU_SUPPORT
+void musbfsh_h_tx_flush_fifo(struct musbfsh_hw_ep *ep)
+#else
 static void musbfsh_h_tx_flush_fifo(struct musbfsh_hw_ep *ep)
+#endif
 {
 	void __iomem *epio = ep->regs;
 	u16 csr;
@@ -301,7 +306,7 @@ static inline void musbfsh_h_tx_start(struct musbfsh_hw_ep *ep)
 
 }
 
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 void musbfsh_ep_set_qh(struct musbfsh_hw_ep *ep, int is_in,
 			      struct musbfsh_qh *qh)
 #else
@@ -315,7 +320,7 @@ static void musbfsh_ep_set_qh(struct musbfsh_hw_ep *ep, int is_in,
 		ep->out_qh = qh;
 }
 
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 struct musbfsh_qh *musbfsh_ep_get_qh(struct musbfsh_hw_ep *ep, int is_in)
 #else
 static struct musbfsh_qh *musbfsh_ep_get_qh(struct musbfsh_hw_ep *ep, int is_in)
@@ -368,6 +373,12 @@ static void musbfsh_start_urb(struct musbfsh *musbfsh, int is_in,
 		musbfsh->ep0_stage = MUSBFSH_EP0_START;
 		buf = urb->setup_packet;	/* contain the request. */
 		len = 8;
+		break;
+	case USB_ENDPOINT_XFER_ISOC:
+		qh->iso_idx = 0;
+		qh->frame = 0;
+		offset = urb->iso_frame_desc[0].offset;
+		len = urb->iso_frame_desc[0].length;
 		break;
 	case USB_ENDPOINT_XFER_ISOC:
 		qh->iso_idx = 0;
@@ -532,7 +543,7 @@ static inline void musbfsh_set_toggle(struct musbfsh_qh *qh, int is_in,
  *
  * Context: caller owns controller lock, IRQs are blocked
  */
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 void musbfsh_advance_schedule(struct musbfsh *musbfsh, struct urb *urb,
 				     struct musbfsh_hw_ep *hw_ep, int is_in)
 #else
@@ -559,6 +570,10 @@ static void musbfsh_advance_schedule(struct musbfsh *musbfsh, struct urb *urb,
 	case USB_ENDPOINT_XFER_INT:
 		/* after the urb, should save the toggle for the ep! */
 		musbfsh_save_toggle(qh, is_in, urb);
+		break;
+	case USB_ENDPOINT_XFER_ISOC:
+		if (status == 0 && urb->error_count)
+			status = -EXDEV;
 		break;
 	case USB_ENDPOINT_XFER_ISOC:
 		if (status == 0 && urb->error_count)
@@ -644,10 +659,10 @@ static void musbfsh_advance_schedule(struct musbfsh *musbfsh, struct urb *urb,
 	if (qh != NULL && qh->is_ready) {
 		INFO("... next ep%d %cX urb %p\n",
 		     hw_ep->epnum, is_in ? 'R' : 'T', next_urb(qh));
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 				if (qh->is_use_qmu && !mtk11_host_qmu_concurrent) {
 					musbfsh_ep_set_qh(hw_ep, is_in, qh);
-					mtk_kick_CmdQ(musbfsh, is_in ? 1:0, qh, next_urb(qh));
+					mtk11_kick_CmdQ(musbfsh, is_in ? 1:0, qh, next_urb(qh));
 				} else if (!qh->is_use_qmu)
 					musbfsh_start_urb(musbfsh, is_in, qh);
 #else
@@ -656,7 +671,11 @@ static void musbfsh_advance_schedule(struct musbfsh *musbfsh, struct urb *urb,
 	}
 }
 
+#ifdef MUSBFSH_QMU_SUPPORT
+u16 musbfsh_h_flush_rxfifo(struct musbfsh_hw_ep *hw_ep, u16 csr)
+#else
 static u16 musbfsh_h_flush_rxfifo(struct musbfsh_hw_ep *hw_ep, u16 csr)
+#endif
 {
 	/* we don't want fifo to fill itself again;
 	 * ignore dma (various models),
@@ -1349,7 +1368,7 @@ void musbfsh_host_tx(struct musbfsh *musbfsh, u8 epnum)	/* real ep num */
 	struct dma_channel *dma;
 	bool transfer_pending = false;
 
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 		if (qh && qh->is_use_qmu)
 			return;
 #endif
@@ -2051,7 +2070,7 @@ static int musbfsh_schedule(struct musbfsh *musbfsh, struct musbfsh_qh *qh,
 		if (musbfsh_ep_get_qh(hw_ep, is_in) != NULL)
 			continue;
 
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 		if (mtk11_isoc_ep_gpd_count && (epnum >= mtk11_isoc_ep_start_idx)) {
 			epnum = musbfsh->nr_endpoints;
 			continue;
@@ -2063,7 +2082,7 @@ static int musbfsh_schedule(struct musbfsh *musbfsh, struct musbfsh_qh *qh,
 		break;
 	}
 
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 	/* grab isoc ep if no other ep is available */
 	if (mtk11_isoc_ep_gpd_count
 			&& !hw_end
@@ -2110,23 +2129,29 @@ success:
 			return -ENOSPC;
 		}
 	}
-
+	hw_ep->type = qh->type;
 	/* the new urb added is the first urb now, excute it! */
 	if (idle) {
 #ifdef CONFIG_MTK_DT_USB_SUPPORT
 		mark_qh_activity(qh->epnum, hw_ep->epnum, is_in, 0);
 #endif
 
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
-			/* downgrade to non-qmu if no specific ep grabbed whenmtk11_ isoc_ep_gpd_count is set*/
+/* downgrade to non-qmu if no specific ep grabbed whenmtk11_ isoc_ep_gpd_count is set*/
+#ifdef MUSBFSH_QMU_SUPPORT
+#ifdef MUSBFSH_QMU_LIMIT_SUPPORT
+			if (mtk11_isoc_ep_gpd_count &&
+				qh->type == USB_ENDPOINT_XFER_ISOC &&
+				hw_end <= MAX_QMU_EP)
+				qh->is_use_qmu = 1;
+#else
 			if (mtk11_isoc_ep_gpd_count &&
 				qh->type == USB_ENDPOINT_XFER_ISOC &&
 				hw_end < mtk11_isoc_ep_start_idx)
 				qh->is_use_qmu = 0;
-
+#endif
 			if (qh->is_use_qmu) {
 				musbfsh_ep_set_qh(hw_ep, is_in, qh);
-				mtk11_kick_CmdQ(musb, is_in ? 1:0, qh, next_urb(qh));
+				mtk11_kick_CmdQ(musbfsh, is_in ? 1:0, qh, next_urb(qh));
 			} else
 				musbfsh_start_urb(musbfsh, is_in, qh);
 #else
@@ -2303,9 +2328,11 @@ static int musbfsh_urb_enqueue(struct usb_hcd *hcd, struct urb *urb,
 		qh = NULL;
 		ret = 0;
 	} else {
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
+#ifndef MUSBFSH_QMU_LIMIT_SUPPORT
 		if ((!usb_pipecontrol(urb->pipe)) && ((usb_pipetype(urb->pipe) + 1) & mtk11_host_qmu_pipe_msk))
 			qh->is_use_qmu = 1;
+#endif
 #endif
 		ret = musbfsh_schedule(musbfsh, qh,
 			(epd->bEndpointAddress & USB_ENDPOINT_DIR_MASK));
@@ -2439,7 +2466,7 @@ static int musbfsh_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 		 * and its URB list has emptied, recycle this qh.
 		 */
 		if (ready && list_empty(&qh->hep->urb_list)) {
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 			if (qh->is_use_qmu)
 				mtk11_disable_q(musbfsh, qh->hw_ep->epnum, is_in);
 #endif
@@ -2524,7 +2551,7 @@ static void musbfsh_h_disable(struct usb_hcd *hcd,
 		while (!list_empty(&hep->urb_list))
 			musbfsh_giveback(musbfsh, next_urb(qh), -ESHUTDOWN);
 
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 		if (qh->is_use_qmu)
 			mtk11_disable_q(musbfsh, qh->hw_ep->epnum, is_in);
 #endif

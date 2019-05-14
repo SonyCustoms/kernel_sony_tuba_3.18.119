@@ -52,6 +52,7 @@
 #define warnmsg(msg...) pr_warn(PFX msg)
 #define errmsg(msg...) pr_err(PFX msg)
 
+#define WK_MAX_MSG_SIZE (128)
 #define MIN_KICK_INTERVAL	 1
 #define MAX_KICK_INTERVAL	30
 #define	MRDUMP_SYSRESETB	0
@@ -421,7 +422,7 @@ void wk_proc_exit(void)
 
 }
 
-void kwdt_print_utc(void)
+void kwdt_print_utc(char *msg_buf, int msg_buf_size)
 {
 	struct rtc_time tm;
 	struct timeval tv = { 0 };
@@ -434,8 +435,8 @@ void kwdt_print_utc(void)
 	rtc_time_to_tm(tv.tv_sec, &tm);
 	tv_android.tv_sec -= sys_tz.tz_minuteswest * 60;
 	rtc_time_to_tm(tv_android.tv_sec, &tm_android);
-	pr_debug
-	    ("[thread:%d][RT:%lld] %d-%02d-%02d %02d:%02d:%02d.%u UTC;"
+	snprintf(msg_buf, msg_buf_size,
+	     "[thread:%d][RT:%lld] %d-%02d-%02d %02d:%02d:%02d.%u UTC;"
 	     "android time %d-%02d-%02d %02d:%02d:%02d.%03d\n",
 	     current->pid, sched_clock(), tm.tm_year + 1900, tm.tm_mon + 1,
 	     tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec,
@@ -451,6 +452,7 @@ static int kwdt_thread(void *arg)
 	int cpu = 0;
 	int local_bit = 0, loc_need_config = 0, loc_timeout = 0;
 	struct wd_api *loc_wk_wdt = NULL;
+	char msg_buf[WK_MAX_MSG_SIZE];
 
 	sched_setscheduler(current, SCHED_FIFO, &param);
 	set_current_state(TASK_INTERRUPTIBLE);
@@ -525,11 +527,20 @@ static int kwdt_thread(void *arg)
 #endif
 				/*limit the rtc time update frequency*/
 				spin_lock(&lock);
+				msg_buf[0] = '\0';
 				if (time_after(jiffies, rtc_update)) {
 					rtc_update = jiffies + (1 * HZ);
-					kwdt_print_utc();
+					kwdt_print_utc(msg_buf, WK_MAX_MSG_SIZE);
 				}
 				spin_unlock(&lock);
+
+				/*
+				 * do not print message with spinlock held to avoid bulk of delayed printk
+				 * happens here
+				 */
+				if (msg_buf[0] != '\0')
+					pr_info("%s", msg_buf);
+
 			}
 		}
 

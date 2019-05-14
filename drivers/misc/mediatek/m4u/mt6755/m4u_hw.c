@@ -295,7 +295,7 @@ int config_mau(M4U_MAU_STRUCT mau)
 	if (mau.enable == 0)
 		return 0;
 
-	if (free_id == -1) {
+	if (free_id < 0) {
 		if (mau.force == 0)
 			return -1;
 		}
@@ -305,12 +305,12 @@ int config_mau(M4U_MAU_STRUCT mau)
 			gMAU_candidate_id = M4U0_MAU_NR - 1;
 		else
 			gMAU_candidate_id--;
-	}
 
-	gM4u0_mau[free_id].Enabled = 1;
-	gM4u0_mau[free_id].MVAStart = MVAStart;
-	gM4u0_mau[free_id].MVAEnd = MVAEnd;
-	gM4u0_mau[free_id].port = mau.port;
+		gM4u0_mau[free_id].Enabled = 1;
+		gM4u0_mau[free_id].MVAStart = MVAStart;
+		gM4u0_mau[free_id].MVAEnd = MVAEnd;
+		gM4u0_mau[free_id].port = mau.port;
+	}
 
 	mau_start_monitor(m4u_id, larb_2_m4u_slave_id(larb), free_id, (int)mau.write,
 			1, 0, 0, MVAStart, MVAEnd, 1 << m4u_port_2_larb_port(mau.port), 1 << larb);
@@ -747,12 +747,13 @@ int m4u_confirm_pfh_all_invalid(int m4u_index)
 	set_nr = MMU_SET_NR(m4u_index);
 	way_nr = MMU_WAY_NR;
 
-	for (way = 0; way < way_nr; way++)
-		for (set = 0; set < set_nr; set++)
+	for (way = 0; way < way_nr; way++) {
+		for (set = 0; set < set_nr; set++) {
 			regval = M4U_ReadReg32(m4u_base, REG_MMU_PFH_VLD(m4u_index, set, way));
 			if (regval & F_MMU_PFH_VLD_BIT(set, way))
 				return -1;
-
+		}
+	}
 	return 0;
 }
 
@@ -1021,14 +1022,8 @@ void smi_common_clock_on(void)
 	enable_clock(MT_CG_DISP0_SMI_COMMON, "smi_common");
 	/* m4uHw_set_field_by_mask(0, 0xf4000108, 0x1, 0x1); */
 #else
-	int ret = 0;
-
 	M4UMSG("error: smi_common_clock_on not support.\n");
 	return;
-	clk_enable(gM4uDev->smi_clk[SMI_COMMON_CLK]);
-
-	if (ret)
-		M4UMSG("error: prepare clk %s fail!.\n", smi_clk_name[SMI_COMMON_CLK]);
 #endif
 }
 EXPORT_SYMBOL(smi_common_clock_on);
@@ -1041,7 +1036,6 @@ void smi_common_clock_off(void)
 #else
 	M4UMSG("error: smi_common_clock_off not support.\n");
 	return;
-	clk_disable(gM4uDev->smi_clk[SMI_COMMON_CLK]);
 #endif
 }
 EXPORT_SYMBOL(smi_common_clock_off);

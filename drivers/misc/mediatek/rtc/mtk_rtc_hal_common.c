@@ -61,9 +61,19 @@ void rtc_write(u16 addr, u16 data)
 
 void rtc_busy_wait(void)
 {
+	unsigned long long t1, t2, t3;
+
 	do {
-		while (rtc_read(RTC_BBPU) & RTC_BBPU_CBUSY)
-			;
+		t1 = sched_clock();
+		t2 = t1;
+		while (rtc_read(RTC_BBPU) & RTC_BBPU_CBUSY) {
+			t3 = sched_clock();
+			if ((t3 - t2) > 500000000) {
+				t2 = t3;
+				hal_rtc_xerror("rtc_busy_wait too long: %lld(%lld:%lld), %x, %d\n",
+					t3-t1, t1, t3, rtc_read(RTC_BBPU), rtc_read(RTC_TC_SEC));
+			}
+		}
 	} while (0);
 }
 
@@ -123,6 +133,12 @@ void rtc_bbpu_pwrdown(bool auto_boot)
 {
 	u16 bbpu;
 
+#ifdef CONFIG_MTK_GPUREGULATOR_INTF
+	/* Used for RT5735A SDA low workaround */
+	if (rt_is_hw_exist())
+		rt_i2c7_switch_gpio_shutdown();
+#endif
+
 	if (auto_boot)
 		bbpu = RTC_BBPU_KEY | RTC_BBPU_AUTO | RTC_BBPU_PWREN;
 	else
@@ -163,6 +179,11 @@ u16 hal_rtc_get_spare_register(rtc_spare_enum cmd)
 
 static void rtc_get_tick(struct rtc_time *tm)
 {
+#ifdef RTC_INT_CNT
+	tm->tm_cnt = rtc_read(RTC_INT_CNT);
+#else
+	tm->tm_cnt = 0;
+#endif
 	tm->tm_sec = rtc_read(RTC_TC_SEC);
 	tm->tm_min = rtc_read(RTC_TC_MIN);
 	tm->tm_hour = rtc_read(RTC_TC_HOU);
@@ -179,7 +200,13 @@ void hal_rtc_get_tick_time(struct rtc_time *tm)
 	rtc_write(RTC_BBPU, bbpu);
 	rtc_write_trigger();
 	rtc_get_tick(tm);
+#ifdef RTC_INT_CNT
+	bbpu = rtc_read(RTC_BBPU) | RTC_BBPU_KEY | RTC_BBPU_RELOAD;
+	rtc_write(RTC_BBPU, bbpu);
+	if (rtc_read(RTC_INT_CNT) < tm->tm_cnt) {	/* SEC has carried */
+#else
 	if (rtc_read(RTC_TC_SEC) < tm->tm_sec) {	/* SEC has carried */
+#endif
 		rtc_get_tick(tm);
 	}
 }

@@ -8,15 +8,6 @@ config MTPROF
 
 if MTPROF
 
-config MTK_LOCK_DEBUG
-	bool "Support some MTK lock debug patches"
-	default y
-	help
-	  CONFIG_MTK_LOCK_DEBUG is used to catch db when spinlock spin more than 1s and to catch
-	  db when check lock fail,such as bug_header,circular_bug,deadlock_bug and so on
-	  Say Y here to enable, If you are not sure about whether to enable it or not, please
-	  set n.
-
 config MTPROF_CPUTIME
 	bool "thread cputime profiling"
 	depends on SCHEDSTATS
@@ -119,7 +110,7 @@ config CONSOLE_LOCK_DURATION_DETECT
 
 config MT_BOOT_TIME_CPU_BOOST
 	bool "Boost CPU performance to enhance boot speed"
-	default y
+	default n
 	help
 	  MT_BOOT_TIME_CPU_BOOST is to boost CPU performance to enhance boot
 	  speed and save time cost during system booting. This mechanism

@@ -138,7 +138,7 @@ static struct mtk_uart_vfifo mtk_uart_vfifo_port[] = {
 #endif				/*ENABLE_VFIFO */
 /*---------------------------------------------------------------------------*/
 /* uart control blocks */
-static struct mtk_uart mtk_uarts[UART_NR];
+struct mtk_uart mtk_uarts[UART_NR];
 static unsigned int uart_freeze_enable[UART_NR] = { 0 };
 
 struct uart_history_data {
@@ -2376,9 +2376,10 @@ static int mtk_uart_probe(struct platform_device *pdev)
 	if (IS_ERR(ppinctrl)) {
 		err = PTR_ERR(ppinctrl);
 		pr_err("[UART%d][PinC]cannot find pinctrl. ptr_err:%ld\n", pdev->id, PTR_ERR(ppinctrl));
-		return err;
+		set_uart_pinctrl(pdev->id, NULL);
+	} else {
+		set_uart_pinctrl(pdev->id, ppinctrl);
 	}
-	set_uart_pinctrl(pdev->id, ppinctrl);
 	pr_debug("[UART%d][PinC]set idx:%d, ppinctrl:%p\n", pdev->id, pdev->id, ppinctrl);
 #else /* !defined(CONFIG_MTK_LEGACY) && !defined(CONFIG_FPGA_EARLY_PORTING) */
 	pr_debug("[UART][PinC]mtk_uart_probe CONFIG_MTK_LEGACY or CONFIG_FPGA_EARLY_PORTING is defined!\n");

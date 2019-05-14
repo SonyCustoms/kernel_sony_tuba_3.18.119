@@ -90,6 +90,7 @@
 #include "mt_spm_sodi_cmdq.h"
 #include "mt_spm_reg.h"
 #include "mt_spm_idle.h"
+#include "layering_rule.h"
 
 #define FRM_UPDATE_SEQ_CACHE_NUM (DISP_INTERNAL_BUFFER_COUNT+1)
 
@@ -419,7 +420,7 @@ static int primary_show_basic_debug_info(struct disp_frame_cfg_t *cfg)
 	int i;
 	fpsEx fps;
 	char disp_tmp[20];
-	int dst_layer_id = 0;
+	unsigned int dst_layer_id = 0;
 	int bytes_per_pixel = 0;
 
 	dprec_logger_get_result_value(DPREC_LOGGER_RDMA0_TRANSFER_1SECOND, &fps);
@@ -444,13 +445,16 @@ static int primary_show_basic_debug_info(struct disp_frame_cfg_t *cfg)
 				dst_layer_id : cfg->input_cfg[i].layer_id;
 		}
 	}
-
-	bytes_per_pixel = cfg->input_cfg[dst_layer_id].src_fmt & 0xff;
-	dynamic_debug_msg_print((unsigned int)(unsigned long)cfg->input_cfg[dst_layer_id].src_phy_addr,
-				cfg->input_cfg[dst_layer_id].tgt_width,
-				cfg->input_cfg[dst_layer_id].tgt_height,
-				cfg->input_cfg[dst_layer_id].src_pitch * bytes_per_pixel,
-				bytes_per_pixel);
+	if (dst_layer_id < (ARRAY_SIZE(cfg->input_cfg))) {
+		bytes_per_pixel = cfg->input_cfg[dst_layer_id].src_fmt & 0xff;
+		dynamic_debug_msg_print((unsigned int)(unsigned long)cfg->input_cfg[dst_layer_id].src_phy_addr,
+					cfg->input_cfg[dst_layer_id].tgt_width,
+					cfg->input_cfg[dst_layer_id].tgt_height,
+					cfg->input_cfg[dst_layer_id].src_pitch * bytes_per_pixel,
+					bytes_per_pixel);
+	} else {
+		BUG();
+	}
 	return 0;
 }
 
@@ -2348,6 +2352,7 @@ static int _convert_disp_input_to_ovl(OVL_CONFIG_STRUCT *dst, disp_input_config 
 
 	if (src->buffer_source == DISP_BUFFER_ALPHA) {
 		dst->source = OVL_LAYER_SOURCE_RESERVED;	/* dim layer, constant alpha */
+		dst->dim_color = src->dim_color;
 	} else if (src->buffer_source == DISP_BUFFER_ION || src->buffer_source == DISP_BUFFER_MVA) {
 		dst->source = OVL_LAYER_SOURCE_MEM;	/* from memory */
 	} else {
@@ -2720,25 +2725,11 @@ static int decouple_update_rdma_config(void)
 
 static int _requestCondition(int overlap_layers)
 {
-	int ret = 0;
-	int iwidth = 0;
-	int ihight = 0;
-
-	ihight = disp_helper_get_option(DISP_OPT_FAKE_LCM_HEIGHT);
-	iwidth = disp_helper_get_option(DISP_OPT_FAKE_LCM_WIDTH);
-
-	if (ihight * iwidth < DISP_HW_HRT_PERF_LCM_AREA_THRESHOLD) {
-		if (overlap_layers <= DISP_HW_HRT_PERF_FOR_LCM_SMALL)
-			return -1;
-	} else {
-		if (overlap_layers > DISP_HW_HRT_PERF_FOR_LCM_BIG_MAX)
-			DISPWRN("overlayed layer num is %d > %d\n", overlap_layers,
-			DISP_HW_HRT_PERF_FOR_LCM_BIG_MAX);
-		if (overlap_layers <= DISP_HW_HRT_PERF_FOR_LCM_BIG)
-			return -1;
-	}
-
-	return ret;
+	if (overlap_layers <= 0)
+		return -1;
+	if (overlap_layers > 1)
+		DISPWRN("hrt level > %d\n", overlap_layers);
+	return 0;
 }
 
 static int _request_dvfs_perf(int req)
@@ -3270,7 +3261,6 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps, int is_lcm_inited
 		if (lcm_param->dpi.format == LCM_DPI_FORMAT_RGB666)
 			data_config->lcm_bpp = 18;
 	}
-
 	data_config->fps = lcm_fps;
 	data_config->dst_dirty = 1;
 	ret = dpmgr_path_config(pgc->dpmgr_handle, data_config, pgc->cmdq_handle_config);
@@ -3405,6 +3395,7 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps, int is_lcm_inited
 done:
 	primary_display_diagnose();
 	dst_module = _get_dst_module_by_lcm(pgc->plcm);
+	layering_rule_init();
 	_primary_path_unlock(__func__);
 	return ret;
 }
@@ -3735,6 +3726,7 @@ int primary_display_resume(void)
 			LCM_PARAMS *lcm_param_cv = NULL;
 
 			lcm_param_cv = disp_lcm_get_params(pgc->plcm);
+			BUG_ON(IS_ERR_OR_NULL(lcm_param_cv));
 			DISPMSG("lcm_mode_status=%d, lcm_param_cv->dsi.mode %d\n",
 					lcm_mode_status, lcm_param_cv->dsi.mode);
 			if (lcm_param_cv->dsi.mode != CMD_MODE)
@@ -4432,7 +4424,11 @@ static int _config_ovl_input(struct disp_frame_cfg_t *cfg,
 		OVL_CONFIG_STRUCT *ovl_cfg;
 
 		layer = input_cfg->layer_id;
-		ovl_cfg = &(data_config->ovl_config[layer]);
+		if (layer > PRIMARY_SESSION_INPUT_LAYER_COUNT-1 || layer < 0) {
+			DISPMSG("layer out of bounds,layer = %d\n", layer);
+			continue;
+		} else
+			ovl_cfg = &(data_config->ovl_config[layer]);
 		if (cfg->setter != SESSION_USER_AEE) {
 			if (is_DAL_Enabled() && layer == primary_display_get_option("ASSERT_LAYER")) {
 				DISPMSG("skip AEE layer %d\n", layer);
@@ -4462,7 +4458,7 @@ static int _config_ovl_input(struct disp_frame_cfg_t *cfg,
 		data_config->ovl_layer_dirty |= (1 << i);
 	}
 
-	overlap_layers = cfg->overlap_layer_num;
+	overlap_layers = HRT_GET_DVFS_LEVEL(cfg->overlap_layer_num);
 	data_config->overlap_layer_num = overlap_layers;
 
 	if (!_requestCondition(overlap_layers)) {
@@ -4735,7 +4731,7 @@ int primary_display_user_cmd(unsigned int cmd, unsigned long arg)
 		cmdqsize = cmdqRecGetInstructionCount(handle);
 	}
 
-	if (cmd == DISP_IOCTL_AAL_GET_HIST) {
+	if (cmd == DISP_IOCTL_AAL_GET_HIST || cmd == DISP_IOCTL_CCORR_GET_IRQ) {
 		_primary_path_lock(__func__);
 		if (pgc->state == DISP_SLEPT && handle) {
 			cmdqRecDestroy(handle);
@@ -4788,6 +4784,8 @@ int primary_display_user_cmd(unsigned int cmd, unsigned long arg)
 					_cmdq_flush_config_handle_mira(handle, 0);
 				}
 			}
+			MMProfileLogEx(ddp_mmp_get_events()->primary_display_cmd,
+					MMProfileFlagEnd, (unsigned long)handle, cmdqsize);
 
 			cmdqRecDestroy(handle);
 		}
@@ -4796,9 +4794,6 @@ user_cmd_unlock:
 		_primary_path_switch_dst_unlock();
 
 	}
-	MMProfileLogEx(ddp_mmp_get_events()->primary_display_cmd,
-		MMProfileFlagEnd, (unsigned long)handle, cmdqsize);
-
 	return ret;
 }
 
@@ -4988,7 +4983,7 @@ static int smart_ovl_try_switch_mode_nolock(void)
 	data_config = dpmgr_path_get_last_config(disp_handle);
 
 	/* calc wdma/rdma data size */
-	rdma_sz = data_config->dst_h * data_config->dst_w * 3;
+	rdma_sz = (unsigned long long)data_config->dst_h * data_config->dst_w * 3;
 
 	/* calc ovl data size */
 	ovl_sz = 0;
@@ -5220,6 +5215,7 @@ int primary_display_get_info(disp_session_info *info)
 	dispif_info->physicalHeight = DISP_GetActiveHeight();
 	dispif_info->physicalWidthUm = DISP_GetActiveWidthUm();
 	dispif_info->physicalHeightUm = DISP_GetActiveHeightUm();
+	dispif_info->density = DISP_GetDensity();
 
 	dispif_info->vsyncFPS = pgc->lcm_fps;
 	dispif_info->isConnected = 1;
@@ -5709,6 +5705,21 @@ uint32_t DISP_GetActiveWidth(void)
 	return 0;
 }
 
+uint32_t DISP_GetDensity(void)
+{
+	if (pgc->plcm == NULL) {
+		DISPERR("lcm handle is null\n");
+		return 0;
+	}
+
+	if (pgc->plcm->params)
+		return pgc->plcm->params->density;
+
+	DISPERR("lcm_params is null!\n");
+	return 0;
+}
+
+
 LCM_PARAMS *DISP_GetLcmPara(void)
 {
 	if (pgc->plcm == NULL) {
@@ -5771,7 +5782,12 @@ static int _screen_cap_by_cmdq(unsigned int mva, enum UNIFIED_COLOR_FMT ufmt, DI
 	_primary_path_lock(__func__);
 
 	primary_display_idlemgr_kick(__func__, 0);
-	dpmgr_path_add_memout(pgc->dpmgr_handle, after_eng, cmdq_handle);
+	ret = dpmgr_path_add_memout(pgc->dpmgr_handle, after_eng, cmdq_handle);
+	if (ret != 0) {
+		DISPMSG("primary capture:Fail to add memout for capture\n");
+		_primary_path_unlock(__func__);
+		goto out;
+	}
 
 	pconfig = dpmgr_path_get_last_config(pgc->dpmgr_handle);
 	pconfig->wdma_dirty = 1;
@@ -6049,7 +6065,11 @@ int disp_hal_allocate_framebuffer(phys_addr_t pa_start, phys_addr_t pa_end, unsi
 		m4u_client_t *client;
 		struct sg_table *sg_table = &table;
 
-		sg_alloc_table(sg_table, 1, GFP_KERNEL);
+		ret = sg_alloc_table(sg_table, 1, GFP_KERNEL);
+		if (ret) {
+				DISPERR("sg_alloc_table returns fail: %d\n", ret);
+				return ret;
+		}
 
 		sg_dma_address(sg_table->sgl) = pa_start;
 		sg_dma_len(sg_table->sgl) = (pa_end - pa_start + 1);
@@ -6096,7 +6116,7 @@ int primary_display_lcm_ATA(void)
 	primary_display_esd_check_enable(0);
 	_primary_path_lock(__func__);
 	disp_irq_esd_cust_bycmdq(0);
-	if (pgc->state == 0) {
+	if (pgc->state == DISP_SLEPT) {
 		DISPMSG("ATA_LCM, primary display path is already sleep, skip\n");
 		goto done;
 	}
@@ -6809,8 +6829,7 @@ int display_freeze_mode(int enable, int need_lock)
 		}
 		primary_display_idlemgr_kick((char *)__func__, 0);
 		session_mode_backup = pgc->session_mode;
-		if (session_mode_backup == DISP_SESSION_DECOUPLE_MODE
-			|| session_mode_backup == DISP_SESSION_RDMA_MODE) {
+		if (session_mode_backup == DISP_SESSION_DECOUPLE_MODE) {
 			do_primary_display_switch_mode(DISP_SESSION_DIRECT_LINK_MODE,
 				pgc->session_id, 0, NULL, 0);
 			session_mode_backup = DISP_SESSION_DIRECT_LINK_MODE;

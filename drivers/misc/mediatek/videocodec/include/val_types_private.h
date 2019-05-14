@@ -16,9 +16,6 @@
 
 #include "val_types_public.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /* #define __EARLY_PORTING__ */
 
@@ -172,16 +169,16 @@ typedef struct {
 
 typedef struct {
 	/*
-	    /< [IN/OUT] HW is Completed or not, set by driver & clear by codec
-	       (0: not completed or still in lock status;
-	       1: HW is completed or in unlock status)
-	*/
+	 *  /< [IN/OUT] HW is Completed or not, set by driver & clear by codec
+	 *     (0: not completed or still in lock status;
+	 *     1: HW is completed or in unlock status)
+	 */
 	VAL_UINT32_T    u4HWIsCompleted;
 	/*
-	    /< [OUT]    HW is Timeout or not, set by driver & clear by codec
-	       (0: not in timeout status;
-	       1: HW is in timeout status)
-	*/
+	 *  /< [OUT]    HW is Timeout or not, set by driver & clear by codec
+	 *     (0: not in timeout status;
+	 *     1: HW is in timeout status)
+	 */
 	VAL_UINT32_T    u4HWIsTimeout;
 	VAL_UINT32_T    u4NumOfRegister;            /* /< [IN]     Number of HW register need to store; */
 	VAL_VCODEC_OAL_MEM_STAUTS_T *pHWStatus;
@@ -241,8 +238,5 @@ typedef struct _VAL_INIT_HANDLE {
 	int i4DriverType;
 	int i4VENCLivePhoto;
 } VAL_INIT_HANDLE;
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* #ifndef _VAL_TYPES_PRIVATE_H_ */

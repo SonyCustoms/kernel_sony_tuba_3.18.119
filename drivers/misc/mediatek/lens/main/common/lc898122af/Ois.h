@@ -22,14 +22,14 @@
 
 /* Define According To Usage */
 
-/****************************** Defines ******************************/
-/*	USE_3WIRE_DGYRO		Digital Gyro I/F 3p		*/
-/*	USE_INVENSENSE		Invensense Digital Gyroscop		*/
-/*	USE_IDG2020		Inv IDG-2020gp				*/
-/*	STANDBY_MODE		Standby		*/
-/*	GAIN_CONT			:Gain control			*/
-/*	(disable)	DSC	:Or Mode gp		*/
-/*	HALLADJ_HW			Hall Calibration LSI		*/
+/****************************** Define説明 ******************************/
+/*	USE_3WIRE_DGYRO		Digital Gyro I/F 3線Mode用		*/
+/*	USE_INVENSENSE		Invensense Digital Gyro使用		*/
+/*	USE_IDG2020		Inv IDG-2020使用				*/
+/*	STANDBY_MODE		Standby制御使用(未確認)		*/
+/*	GAIN_CONT			:Gain control機			*/
+/*	(disable)	DSC	:三脚Mode使用		*/
+/*	HALLADJ_HW			Hall Calibration LSI機		*/
 /************************************************************************/
 
 /**************** Select Gyro Sensor **************/
@@ -40,7 +40,7 @@
 
 
 
-#define		FS_SEL		3	/* }32.8 LSB */
+#define		FS_SEL		3	/* ±32.8LSB/?/s  */
 
 
 #endif

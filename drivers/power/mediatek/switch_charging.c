@@ -124,8 +124,11 @@ extern int g_battery_id_voltage[];
 DEFINE_MUTEX(g_ichg_aicr_access_mutex);
 DEFINE_MUTEX(g_aicr_access_mutex);
 DEFINE_MUTEX(g_ichg_access_mutex);
+DEFINE_MUTEX(g_hv_charging_mutex);
 unsigned int g_aicr_upper_bound;
 static bool g_enable_dynamic_cv = true;
+static bool g_enable_hv_charging = true;
+static atomic_t g_en_kpoc_shdn = ATOMIC_INIT(1);
 
  /* ///////////////////////////////////////////////////////////////////////////////////////// */
  /* // JEITA */
@@ -461,7 +464,7 @@ bool get_usb_current_unlimited(void)
 	if (BMT_status.charger_type == STANDARD_HOST || BMT_status.charger_type == CHARGING_HOST)
 		return usb_unlimited;
 
-		return false;
+	return false;
 }
 
 void set_usb_current_unlimited(bool enable)
@@ -695,6 +698,40 @@ int mtk_chr_reset_aicr_upper_bound(void)
 {
 	g_aicr_upper_bound = 0;
 	return 0;
+}
+
+int mtk_chr_enable_hv_charging(bool en)
+{
+	battery_log(BAT_LOG_CRTI, "%s: en = %d\n", __func__, en);
+
+	mutex_lock(&g_hv_charging_mutex);
+	g_enable_hv_charging = en;
+	mutex_unlock(&g_hv_charging_mutex);
+
+	return 0;
+}
+
+bool mtk_chr_is_hv_charging_enable(void)
+{
+	return g_enable_hv_charging;
+}
+
+int mtk_chr_enable_kpoc_shutdown(bool en)
+{
+	if (en)
+		atomic_set(&g_en_kpoc_shdn, 1);
+	else
+		atomic_set(&g_en_kpoc_shdn, 0);
+	return 0;
+}
+
+bool mtk_chr_is_kpoc_shutdown_enable(void)
+{
+	int en = 0;
+
+	en = atomic_read(&g_en_kpoc_shdn);
+
+	return en > 0 ? true : false;
 }
 
 int set_chr_boost_current_limit(unsigned int current_limit)

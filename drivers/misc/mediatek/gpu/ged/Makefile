@@ -31,7 +31,6 @@ ccflags-y += \
 	-I$(srctree)/drivers/misc/mediatek/video/include
 
 # ----- for FRR2.0 ----- #
-$(info *MTK_PLATFORM: $(MTK_PLATFORM))
 ifneq (, $(findstring mt6, $(MTK_PLATFORM)))
 ccflags-y += -DENABLE_FRR_FOR_MT6XXX_PLATFORM
 
@@ -93,10 +92,10 @@ ged-y += \
 	src/ged_notify_sw_vsync.o \
 	src/ged_hashtable.o \
 	src/ged_thread.o \
+	src/ged_ge.o \
 	src/ged_dvfs.o
     
 
-$(info *MTK_PLATFORM: $(MTK_PLATFORM))
 ifneq (, $(findstring mt6, $(MTK_PLATFORM)))
 ged-y += src/ged_vsync.o
 endif

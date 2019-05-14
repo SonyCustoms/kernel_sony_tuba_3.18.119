@@ -18,6 +18,7 @@
 
 extern LCM_DRIVER otm1282a_hd720_dsi_vdo_60hz_lcm_drv;
 extern LCM_DRIVER otm1282a_hd720_dsi_vdo_lcm_drv;
+extern LCM_DRIVER nt36672_fhdp_dsi_vdo_auo_lcm_drv;
 extern LCM_DRIVER nt35595_fhd_dsi_cmd_truly_8163_lcm_drv;
 extern LCM_DRIVER nt35523_wxga_dsi_vdo_8163_lcm_drv;
 extern LCM_DRIVER vvx10f008b00_wuxga_dsi_vdo_lcm_drv;
@@ -189,6 +190,7 @@ extern LCM_DRIVER nt35590_dsi_cmd_6571_fwvga_lcm_drv;
 extern LCM_DRIVER nt35590_dsi_cmd_6571_qhd_lcm_drv;
 extern LCM_DRIVER it6151_edp_dsi_video_sharp_lcm_drv;
 extern LCM_DRIVER nt35517_qhd_dsi_vdo_lcm_drv;
+extern LCM_DRIVER oppo_tianma_td4310_fhdp_dsi_vdo_nt50358_lcm_drv;
 extern LCM_DRIVER otm1283a_hd720_dsi_vdo_tm_lcm_drv;
 extern LCM_DRIVER otm1284a_hd720_dsi_vdo_tm_lcm_drv;
 extern LCM_DRIVER otm1285a_hd720_dsi_vdo_tm_lcm_drv;
@@ -210,7 +212,10 @@ extern LCM_DRIVER r69338_hd720_5in_dsi_vdo_jdi_dw8768_drv;
 extern LCM_DRIVER db7436_dsi_vdo_fwvga_drv;
 extern LCM_DRIVER r63417_fhd_dsi_cmd_truly_nt50358_lcm_drv;
 extern LCM_DRIVER r63417_fhd_dsi_cmd_truly_nt50358_720p_lcm_drv;
+extern LCM_DRIVER r63417_fhd_dsi_cmd_truly_nt50358_hdplus_lcm_drv;
+extern LCM_DRIVER r63417_fhd_dsi_cmd_truly_nt50358_hd_lcm_drv;
 extern LCM_DRIVER r63417_fhd_dsi_cmd_truly_nt50358_qhd_lcm_drv;
+extern LCM_DRIVER r63417_fhd_dsi_cmd_truly_nt50358_fwvga_lcm_drv;
 extern LCM_DRIVER r63417_fhd_dsi_vdo_truly_nt50358_lcm_drv;
 extern LCM_DRIVER r63419_wqhd_truly_phantom_cmd_lcm_drv;
 extern LCM_DRIVER r63419_wqhd_truly_phantom_vdo_lcm_drv;

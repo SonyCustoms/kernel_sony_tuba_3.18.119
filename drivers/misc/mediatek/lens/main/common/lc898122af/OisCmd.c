@@ -322,7 +322,7 @@ unsigned long TnePtp(unsigned char UcDirSel, unsigned char UcBfrAft)
 {
 	union UnDwdVal StTneVal;
 
-	MesFil(THROUGH);
+	MesFil(THROUGH);	/* 測定用フィ?ターを設定する。 */
 
 
 	if (!UcDirSel) {
@@ -1347,23 +1347,27 @@ unsigned char TneGvc(void)
 	RegWriteA_LC898122AF(IZBH, (unsigned char)(INITVAL >> 8));	/* 0x02A2               Set Offset High byte */
 	RegWriteA_LC898122AF(IZBL, (unsigned char)INITVAL);	/* 0x02A3               Set Offset Low byte */
 
-	MesFil(THROUGH);
-
+	MesFil(THROUGH);	/* 測定用フィ?ターを設定する。 */
+	/* //////// */
+	/* X */
+	/* //////// */
 	RegWriteA_LC898122AF(WC_MES1ADD0, 0x00);	/* 0x0194 */
 	RegWriteA_LC898122AF(WC_MES1ADD1, 0x00);	/* 0x0195 */
 	ClrGyr(0x1000, CLR_FRAM1);	/* Measure Filter RAM Clear */
 	StAdjPar.StGvcOff.UsGxoVal = (unsigned short)GenMes(AD2Z, 0);
-
+	/* 64回の平均値測定     GYRMON1(0x1110) <- GXADZ(0x144A) */
 	RegWriteA_LC898122AF(IZAH, (unsigned char)(StAdjPar.StGvcOff.UsGxoVal >> 8));
 	/* 0x02A0               Set Offset High byte */
 	RegWriteA_LC898122AF(IZAL, (unsigned char)(StAdjPar.StGvcOff.UsGxoVal));
 	/* 0x02A1               Set Offset Low byte */
-
+	/* //////// */
+	/* Y */
+	/* //////// */
 	RegWriteA_LC898122AF(WC_MES1ADD0, 0x00);	/* 0x0194 */
 	RegWriteA_LC898122AF(WC_MES1ADD1, 0x00);	/* 0x0195 */
 	ClrGyr(0x1000, CLR_FRAM1);	/* Measure Filter RAM Clear */
 	StAdjPar.StGvcOff.UsGyoVal = (unsigned short)GenMes(AD3Z, 0);
-
+	/* 64回の平均値測定     GYRMON2(0x1111) <- GYADZ(0x14CA) */
 	RegWriteA_LC898122AF(IZBH, (unsigned char)(StAdjPar.StGvcOff.UsGyoVal >> 8));
 	/* 0x02A2               Set Offset High byte */
 	RegWriteA_LC898122AF(IZBL, (unsigned char)(StAdjPar.StGvcOff.UsGyoVal));
@@ -1546,14 +1550,14 @@ void S2cPro(unsigned char uc_mode)
 #ifdef H1COEF_CHANGER
 		SetH1cMod(S2MODE);	/* cancel Lvl change */
 #endif
-		/* HPF\81\A8Through Setting */
+		/* HPF→Through Setting */
 		RegWriteA_LC898122AF(WG_SHTON, 0x11);	/* 0x0107 */
 		RamWrite32A_LC898122AF(gxh1c, DIFIL_S2);	/* 0x1012 */
 		RamWrite32A_LC898122AF(gyh1c, DIFIL_S2);	/* 0x1112 */
 	} else {
 		RamWrite32A_LC898122AF(gxh1c, UlH1Coefval);	/* 0x1012 */
 		RamWrite32A_LC898122AF(gyh1c, UlH1Coefval);	/* 0x1112 */
-		/* HPF\81\A8Through Setting */
+		/* HPF→Through Setting */
 		RegWriteA_LC898122AF(WG_SHTON, 0x00);	/* 0x0107 */
 
 #ifdef H1COEF_CHANGER
@@ -1661,6 +1665,7 @@ const unsigned short CucFreqVal[17] = {
 
 #define		USE_SINLPF	/* if sin or circle movement is used LPF , this define has to enable */
 
+/* 振?はsxsin(0x10D5),sysin(0x11D5)で調整 */
 void SetSinWavePara(unsigned char UcTableVal, unsigned char UcMethodVal)
 {
 	unsigned short UsFreqDat;
@@ -1687,7 +1692,7 @@ void SetSinWavePara(unsigned char UcTableVal, unsigned char UcMethodVal)
 		MesFil(NOISE);	/* LPF */
 #endif
 
-	if (UsFreqDat == 0xFFFF) {
+	if (UsFreqDat == 0xFFFF) {	/* Sine波?止 */
 
 		RegReadA_LC898122AF(WH_EQSWX, &UcEqSwX);	/* 0x0170       */
 		RegReadA_LC898122AF(WH_EQSWY, &UcEqSwY);	/* 0x0171       */
@@ -2079,7 +2084,7 @@ void SetZsp(unsigned char UcZoomStepDat)
 
 	/* Zoom Step */
 	if (UcZoomStepDat > (ZOOMTBL - 1))
-		UcZoomStepDat = (ZOOMTBL - 1);
+		UcZoomStepDat = (ZOOMTBL - 1);	/* 上限をZOOMTBL-1に設定する */
 
 	if (UcZoomStepDat == 0) {	/* initial setting        */
 		UlGyrZmx = ClGyxZom[0];	/* Same Wide Coefficient */
@@ -2256,7 +2261,7 @@ const signed char ScCselRate[CRATETABLE] = {
 
 #define	START_RSEL		0x04	/* Typ */
 #define	START_CSEL		0x08	/* Typ bit4:OSCPMSEL */
-#define	MEAS_MAX		32	/* \8F\E3\8C\C032\89\F1 */
+#define	MEAS_MAX		32	/* 上限32回 */
 /* Measure Status (UcClkJdg) */
 #define	UNDR_MEAS		0x00
 #define	FIX_MEAS		0x01
@@ -2327,7 +2332,7 @@ unsigned short OscAdj(void)
 				UcMeasFlg |= (RSELFX | RSEL2ND);
 			else
 				UcMeasFlg |= RSEL1ST;
-			ScTblRate_Now = ScRselRate[UcOscrsel];	/* \8D\A1\82\CCRate */
+			ScTblRate_Now = ScRselRate[UcOscrsel];	/* 今のRate */
 			ScTblRate_Tgt = ScTblRate_Now + (short)FcalB;
 			if (ScTblRate_Now > ScTblRate_Tgt) {
 				while (1) {
@@ -2871,7 +2876,7 @@ unsigned char TneHvc(void)
 
 	WitTim_LC898122AF(500);
 
-	/* \95\BD\8Bﾏ値\91\AA\92\E8 */
+	/* 平均値測定 */
 
 	MesFil(THROUGH);	/* Set Measure Filter */
 
@@ -2923,7 +2928,7 @@ void SetGcf(unsigned char UcSetNum)
 
 	/* Zoom Step */
 	if (UcSetNum > (COEFTBL - 1))
-		UcSetNum = (COEFTBL - 1);
+		UcSetNum = (COEFTBL - 1);	/* 上限をCOEFTBL-1に設定する */
 
 	UlH1Coefval = ClDiCof[UcSetNum];
 

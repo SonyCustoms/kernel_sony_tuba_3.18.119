@@ -1,0 +1,412 @@
+--- drivers/misc/mediatek/ccci_util/ccci_util_lib_fo.c
++++ drivers/misc/mediatek/ccci_util/ccci_util_lib_fo.c
+@@ -95,11 +95,143 @@ typedef struct _ccci_tag_v2 {
+ 	unsigned int next_tag_offset;
+ } ccci_tag_v2_t;
+ 
++
++/*====================================================== */
++/* Global variable support section                       */
++/*====================================================== */
++static unsigned int s_g_md_env_rdy_flag;
++static unsigned int s_g_md_usage_case;
++static unsigned int md_support[MAX_MD_NUM_AT_LK];
++static unsigned int meta_md_support[MAX_MD_NUM_AT_LK];
++static unsigned int meta_boot_arguments[MAX_MD_NUM_AT_LK];
++static unsigned int md_type_at_lk[MAX_MD_NUM_AT_LK];
++
++static unsigned int s_g_lk_load_img_status;
++static unsigned long s_g_dt_chosen_node;
++static int s_g_lk_ld_md_errno;
++static unsigned int s_g_tag_inf_size;
++
++/* ------ tag info for each modem ---------------------- */
++typedef struct _modem_info {
++	unsigned long long base_addr;
++	unsigned int size;
++	char md_id;
++	char errno;
++	char md_type;
++	char ver;
++	unsigned int reserved[2];
++} modem_info_t;
++
++static int lk_load_img_err_no[MAX_MD_NUM_AT_LK];
++
+ static void __iomem *s_g_lk_inf_base;
+ static unsigned int s_g_tag_cnt;
+ static unsigned int s_g_lk_info_tag_version; /* Note, this for tag info solution version */
+ static int s_g_curr_ccci_fo_version; /* Note, this for feature option solution version */
+ 
++/*------------------------------------------*/
++/* RAT configure setting */
++/* Bit map defination at AP side            */
++/* 0 | 0 | C | Lf | Lt | W | T | G          */
++#define MD_CAP_ENHANCE		(0x5A<<24)
++#define MD_CAP_GSM		(1<<0)
++#define MD_CAP_TDS_CDMA		(1<<1)
++#define MD_CAP_WCDMA		(1<<2)
++#define MD_CAP_TDD_LTE		(1<<3)
++#define MD_CAP_FDD_LTE		(1<<4)
++#define MD_CAP_CDMA2000		(1<<5)
++#define MD_CAP_MASK		(MD_CAP_GSM|MD_CAP_TDS_CDMA|MD_CAP_WCDMA|MD_CAP_TDD_LTE|MD_CAP_FDD_LTE|MD_CAP_CDMA2000)
++#define MD_CAP_BIT_NUM		(6)
++
++/*------------------------------------------*/
++/* Bit map defination at MD side diff to AP */
++/* 0 | 0 | Lf | Lt | W | C | T | G          */
++#define MD_CAP_GSM_AT_MD	(1<<0)
++#define MD_CAP_TDS_CDMA_AT_MD	(1<<1)
++#define MD_CAP_WCDMA_AT_MD	(1<<3)
++#define MD_CAP_TDD_LTE_AT_MD	(1<<4)
++#define MD_CAP_FDD_LTE_AT_MD	(1<<5)
++#define MD_CAP_CDMA2000_AT_MD	(1<<2)
++
++#define LEGACY_UBIN_START_ID	(8)
++#define LEGACY_UBIN_END_ID	(21)
++
++static const unsigned int ubin_convert_table_src[] = {
++	(MD_CAP_GSM|MD_CAP_TDD_LTE|MD_CAP_FDD_LTE|MD_CAP_CDMA2000),
++	(MD_CAP_GSM|MD_CAP_WCDMA|MD_CAP_CDMA2000)
++};
++
++static const unsigned int ubin_convert_table_des[] = {
++	(MD_CAP_GSM|MD_CAP_WCDMA|MD_CAP_TDD_LTE|MD_CAP_FDD_LTE|MD_CAP_CDMA2000),
++	(MD_CAP_GSM|MD_CAP_WCDMA|MD_CAP_TDD_LTE|MD_CAP_FDD_LTE|MD_CAP_CDMA2000)
++};
++
++static unsigned int compatible_convert(unsigned int src_rat)
++{
++	int i;
++
++	for (i = 0; i < (sizeof(ubin_convert_table_src)/sizeof(unsigned int)); i++) {
++		if (ubin_convert_table_src[i] == src_rat) {
++			CCCI_UTIL_INF_MSG("ccci rat convert from 0x%x to 0x%x\r\n",
++				src_rat, ubin_convert_table_des[i]);
++			return ubin_convert_table_des[i];
++		}
++	}
++	return src_rat;
++}
++
++static unsigned int ap_rat_bitmap_to_md_bitmap(unsigned int rat_cfg)
++{
++	unsigned int md_rat_cfg = 0;
++
++	/* GSM */
++	if (rat_cfg & MD_CAP_GSM)
++		md_rat_cfg |= MD_CAP_GSM_AT_MD;
++	/* TDS CDMA */
++	if (rat_cfg & MD_CAP_TDS_CDMA)
++		md_rat_cfg |= MD_CAP_TDS_CDMA_AT_MD;
++	/* WCDMA */
++	if (rat_cfg & MD_CAP_WCDMA)
++		md_rat_cfg |= MD_CAP_WCDMA_AT_MD;
++	/* TDD-LTE */
++	if (rat_cfg & MD_CAP_TDD_LTE)
++		md_rat_cfg |= MD_CAP_TDD_LTE_AT_MD;
++	/* FDD-LTE */
++	if (rat_cfg & MD_CAP_FDD_LTE)
++		md_rat_cfg |= MD_CAP_FDD_LTE_AT_MD;
++	/* CMMA2000 */
++	if (rat_cfg & MD_CAP_CDMA2000)
++		md_rat_cfg |= MD_CAP_CDMA2000_AT_MD;
++
++	return md_rat_cfg;
++}
++
++static unsigned int legacy_ubin_rat_map[] = {
++	(MD_CAP_FDD_LTE|MD_CAP_TDD_LTE|MD_CAP_TDS_CDMA|MD_CAP_GSM), /* ultg */
++	(MD_CAP_FDD_LTE|MD_CAP_TDD_LTE|MD_CAP_WCDMA|MD_CAP_GSM), /* ulwg */
++	(MD_CAP_FDD_LTE|MD_CAP_TDD_LTE|MD_CAP_WCDMA|MD_CAP_TDS_CDMA|MD_CAP_GSM), /* ulwtg */
++	(MD_CAP_FDD_LTE|MD_CAP_TDD_LTE|MD_CAP_WCDMA|MD_CAP_CDMA2000|MD_CAP_GSM), /* ulwcg */
++	(MD_CAP_FDD_LTE|MD_CAP_TDD_LTE|MD_CAP_WCDMA|MD_CAP_CDMA2000|MD_CAP_TDS_CDMA|MD_CAP_GSM), /* ulwctg */
++	(MD_CAP_TDD_LTE|MD_CAP_TDS_CDMA|MD_CAP_GSM), /* ulttg */
++	(MD_CAP_FDD_LTE|MD_CAP_WCDMA|MD_CAP_GSM), /* ulfwg */
++	(MD_CAP_FDD_LTE|MD_CAP_WCDMA|MD_CAP_CDMA2000|MD_CAP_GSM), /* ulfwcg */
++	(MD_CAP_FDD_LTE|MD_CAP_CDMA2000|MD_CAP_TDS_CDMA|MD_CAP_GSM), /* ulctg */
++	(MD_CAP_TDD_LTE|MD_CAP_CDMA2000|MD_CAP_TDS_CDMA|MD_CAP_GSM), /* ultctg */
++	(MD_CAP_TDD_LTE|MD_CAP_WCDMA|MD_CAP_GSM), /*ultwg */
++	(MD_CAP_TDD_LTE|MD_CAP_WCDMA|MD_CAP_CDMA2000|MD_CAP_GSM), /* ultwcg */
++	(MD_CAP_FDD_LTE|MD_CAP_TDS_CDMA|MD_CAP_GSM), /* ulftg */
++	(MD_CAP_FDD_LTE|MD_CAP_CDMA2000|MD_CAP_TDS_CDMA|MD_CAP_GSM)/* ulfctg */
++};
++
++static unsigned int ubin_md_support_id_to_rat(int md_support_id)
++{
++	if (md_support_id < LEGACY_UBIN_START_ID)
++		return 0;
++	if (md_support_id > LEGACY_UBIN_END_ID)
++		return 0;
++	return legacy_ubin_rat_map[md_support_id - LEGACY_UBIN_START_ID];
++}
++
+ static int find_ccci_tag_inf(char *name, char *buf, unsigned int size)
+ {
+ 	unsigned int i;
+@@ -164,16 +296,6 @@ static int find_ccci_tag_inf(char *name, char *buf, unsigned int size)
+ }
+ 
+ /*====================================================== */
+-/* Global variable support section                       */
+-/*====================================================== */
+-static unsigned int s_g_md_env_rdy_flag;
+-static unsigned int s_g_md_usage_case;
+-static unsigned int md_support[MAX_MD_NUM_AT_LK];
+-static unsigned int meta_md_support[MAX_MD_NUM_AT_LK];
+-static unsigned int md_type_at_lk[MAX_MD_NUM_AT_LK];
+-static unsigned char md_info_tag_val[4];
+-
+-/*====================================================== */
+ /* Feature option setting support section                */
+ /*====================================================== */
+ /* Feature Option Setting */
+@@ -371,25 +493,6 @@ static void parse_option_setting_from_lk(void)
+ #define LK_KERNEL_SETTING_MIS_SYNC	(1<<4)
+ #define LK_TAG_BUFF_SIZE_NOT_ENOUGH	(1<<5)
+ 
+-/* ------ Common global variable ----------------------- */
+-static unsigned int s_g_lk_load_img_status;
+-static unsigned long s_g_dt_chosen_node;
+-static int s_g_lk_ld_md_errno;
+-static unsigned int s_g_tag_inf_size;
+-
+-/* ------ tag info for each modem ---------------------- */
+-typedef struct _modem_info {
+-	unsigned long long base_addr;
+-	unsigned int size;
+-	char md_id;
+-	char errno;
+-	char md_type;
+-	char ver;
+-	unsigned int reserved[2];
+-} modem_info_t;
+-
+-static int lk_load_img_err_no[MAX_MD_NUM_AT_LK];
+-
+ /*---- META arguments parse --------------------- */
+ #define ATAG_MDINFO_DATA	0x41000806
+ #define MD_META_TAG_TBL_SIZE	4
+@@ -429,10 +532,8 @@ static int parse_meta_boot_arguments(unsigned int *raw_ptr)
+ 		active_id = MD_SYS2;
+ 	else if (md_info_tag_array[1] & MD3_EN)
+ 		active_id = MD_SYS3;
+-	else if (md_info_tag_array[1] & MD5_EN)
+-		active_id = MD_SYS5;
+ 	else {
+-		CCCI_UTIL_ERR_MSG("META MD setting not found [%d][%d]\n",
++		CCCI_UTIL_ERR_MSG("Using default META MD setting[%d][%d]\n",
+ 			md_info_tag_array[0], md_info_tag_array[1]);
+ 		return -3;
+ 	}
+@@ -441,14 +542,25 @@ static int parse_meta_boot_arguments(unsigned int *raw_ptr)
+ 				md_info_tag_array[0], md_info_tag_array[1],
+ 				md_info_tag_array[2], md_info_tag_array[3]);
+ 
+-	/* The following code for meta arguments assignement */
+-	if (active_id == MD_SYS1) {
+-		if (md_capability(MD_SYS1, md_info_tag_array[0], md_type_at_lk[MD_SYS1]))
+-			meta_md_support[active_id] = md_info_tag_array[0];
+-		else
+-			CCCI_UTIL_ERR_MSG("md_type:%d] not support wm_id %d\n",
+-				md_type_at_lk[MD_SYS1], md_info_tag_array[0]);
+-	}
++	if (md_info_tag_array[0] == MD_2G_FLAG)
++		meta_boot_arguments[active_id] = modem_2g;
++	else if (md_info_tag_array[0] == MD_WG_FLAG)
++		meta_boot_arguments[active_id] = modem_wg;
++	else if (md_info_tag_array[0] == MD_TG_FLAG)
++		meta_boot_arguments[active_id] = modem_tg;
++	else if (md_info_tag_array[0] == MD_LWG_FLAG)
++		meta_boot_arguments[active_id] = modem_lwg;
++	else if (md_info_tag_array[0] == MD_LTG_FLAG)
++		meta_boot_arguments[active_id] = modem_ltg;
++	else if (md_info_tag_array[0] & MD_SGLTE_FLAG)
++		meta_boot_arguments[active_id] = modem_sglte;
++	else
++		meta_boot_arguments[active_id] = md_info_tag_array[0];
++
++	CCCI_UTIL_INF_MSG("md type at lk:0x%x] with rat 0x%x\n",
++			md_type_at_lk[active_id], md_info_tag_array[0]);
++	CCCI_UTIL_INF_MSG("final active_id:%d, meta_boot_arguments:%d\n",
++			active_id, meta_boot_arguments[active_id]);
+ 
+ 	return 0;
+ }
+@@ -866,8 +1007,10 @@ int get_lk_load_md_info(char buf[], int size)
+ 
+ 	if (s_g_lk_load_img_status & LK_LOAD_MD_EN)
+ 		has_write = snprintf(buf, size, "LK Load MD:[Enabled](0x%08x)\n", s_g_lk_load_img_status);
+-	else
++	else {
+ 		has_write = snprintf(buf, size, "LK Load MD:[Disabled](0x%08x)\n", s_g_lk_load_img_status);
++		return has_write;
++	}
+ 
+ 	if ((s_g_lk_load_img_status & (~0x1)) == 0) {
+ 		has_write += snprintf(&buf[has_write], size - has_write, "LK load MD success!\n");
+@@ -995,44 +1138,35 @@ unsigned int get_modem_is_enabled(int md_id)
+ 
+ int get_modem_support_cap(int md_id)
+ {
++	int ret = -1;
+ 	if (md_id < MAX_MD_NUM_AT_LK) {
+-		if (((get_boot_mode() == META_BOOT) || (get_boot_mode() == ADVMETA_BOOT))
+-		    && (meta_md_support[md_id] != 0))
+-			return meta_md_support[md_id];
+-		else
+-			return md_support[md_id];
++		if ((get_boot_mode() == META_BOOT) || (get_boot_mode() == ADVMETA_BOOT)) {
++			/* using priority */
++			if (meta_boot_arguments[md_id])
++				ret = meta_boot_arguments[md_id];
++			else
++				ret = meta_md_support[md_id];
++		} else
++			ret = md_support[md_id];
+ 	}
+-	return -1;
++
++	return ret;
++}
++
++void clear_meta_1st_boot_arg(int md_id)
++{
++	if (md_id < MAX_MD_NUM_AT_LK)
++		meta_boot_arguments[md_id] = 0; /* Note here, only use once when boot */
+ }
+ 
+ int set_modem_support_cap(int md_id, int new_val)
+ {
+ 	if (md_id < MAX_MD_NUM_AT_LK) {
+-		if (((get_boot_mode() == META_BOOT) || (get_boot_mode() == ADVMETA_BOOT))
+-			&& (meta_md_support[md_id] != 0)) {
+-			if (s_g_curr_ccci_fo_version == CCCI_FO_VER_02) {
+-				/* UBin version */
+-				/* Priority: boot arg > NVRAM > default */
+-				if (meta_md_support[md_id] == 0) {
+-					CCCI_UTIL_INF_MSG("md%d: meta new wmid:%d\n", md_id + 1, new_val);
+-					meta_md_support[md_id] = new_val;
+-				} else {
+-					CCCI_UTIL_INF_MSG("md%d: boot arg has val:%d(%d)\n", md_id + 1,
+-							meta_md_support[md_id], new_val);
+-					/*
+-					 * We hope first write clear meta default setting
+-					 * then, modem first boot will using meta setting that get from boot arguments
+-					 */
+-					meta_md_support[md_id] = 0;
+-					return -1;
+-				}
+-			} else {
+-				/* Legcy version */
+-				CCCI_UTIL_INF_MSG("md%d: meta legcy md type:%d\n", md_id + 1, new_val);
+-					meta_md_support[md_id] = new_val;
+-			}
++		if ((get_boot_mode() == META_BOOT) || (get_boot_mode() == ADVMETA_BOOT)) {
++			meta_md_support[md_id] = new_val;
++			CCCI_UTIL_INF_MSG("md%d: meta md type:%d[0x%x]\n", md_id + 1, new_val);
+ 		} else {
+-			CCCI_UTIL_INF_MSG("md%d: new mdtype(/wmid):%d\n", md_id + 1, new_val);
++			CCCI_UTIL_INF_MSG("md%d: new mdtype(/wmid):0x%x\n", md_id + 1, new_val);
+ 			md_support[md_id] = new_val;
+ 		}
+ 		return 0;
+@@ -1064,45 +1198,26 @@ mpu_cfg_t *get_mpu_region_cfg_info(int region_id)
+ /**************************************************************/
+ /* The following functions are back up for old platform       */
+ /**************************************************************/
+-int ccci_parse_meta_md_setting(unsigned char args[])
++int __init ccci_parse_meta_md_setting(void)
+ {
+-	unsigned char md_active_setting = args[1];
+-	unsigned char md_setting_flag = args[0];
+-	int active_id = -1;
+-
+-	if (md_active_setting & MD1_EN)
+-		active_id = MD_SYS1;
+-	else if (md_active_setting & MD2_EN)
+-		active_id = MD_SYS2;
+-	else if (md_active_setting & MD3_EN)
+-		active_id = MD_SYS3;
+-	else if (md_active_setting & MD5_EN)
+-		active_id = MD_SYS5;
+-	else
+-		CCCI_UTIL_ERR_MSG("META MD setting not found [%d][%d]\n", args[0], args[1]);
++	/* Device tree method */
++	int ret;
++	unsigned int *raw_ptr;
+ 
+-	switch (active_id) {
+-	case MD_SYS1:
+-	case MD_SYS2:
+-	case MD_SYS3:
+-		if (md_setting_flag == MD_2G_FLAG)
+-			meta_md_support[active_id] = modem_2g;
+-		else if (md_setting_flag == MD_WG_FLAG)
+-			meta_md_support[active_id] = modem_wg;
+-		else if (md_setting_flag == MD_TG_FLAG)
+-			meta_md_support[active_id] = modem_tg;
+-		else if (md_setting_flag == MD_LWG_FLAG)
+-			meta_md_support[active_id] = modem_lwg;
+-		else if (md_setting_flag == MD_LTG_FLAG)
+-			meta_md_support[active_id] = modem_ltg;
+-		else if (md_setting_flag & MD_SGLTE_FLAG)
+-			meta_md_support[active_id] = modem_sglte;
+-		CCCI_UTIL_INF_MSG("META MD%d to type:%d\n", active_id + 1, meta_md_support[active_id]);
+-		break;
+-	case MD_SYS5:
+-	default:
++	/* This function will initialize s_g_dt_chosen_node */
++	ret = of_scan_flat_dt(early_init_dt_get_chosen, NULL);
++	if (ret == 0) {
++		CCCI_UTIL_INF_MSG("device node no chosen node\n");
+ 		return -1;
+ 	}
++
++	/* Get META settings at device tree, only MD1 use this */
++	raw_ptr = (unsigned int *)of_get_flat_dt_prop(s_g_dt_chosen_node, "atag,mdinfo", NULL);
++	if (raw_ptr == NULL)
++		CCCI_UTIL_INF_MSG("atag,mdinfo not found\n");
++	else
++		return parse_meta_boot_arguments(raw_ptr);
++
+ 	return 0;
+ }
+ 
+@@ -1189,9 +1323,9 @@ static void cal_md_settings(int md_id)
+ 			&md_resv_smem_addr[md_id], CCCI_SMEM_ALIGN_MD1);
+ 
+ 	CCCI_UTIL_INF_MSG_WITH_ID(md_id, "MemStart: %016llx, MemSize:0x%08X\n",
+-		md_resv_mem_addr[md_id], md_resv_mem_size[md_id]);
++		(unsigned long long)md_resv_mem_addr[md_id], md_resv_mem_size[md_id]);
+ 	CCCI_UTIL_INF_MSG_WITH_ID(md_id, "SMemStart: %016llx, SMemSize:0x%08X\n",
+-		md_resv_smem_addr[md_id], md_resv_smem_size[md_id]);
++		(unsigned long long)md_resv_smem_addr[md_id], md_resv_smem_size[md_id]);
+ }
+ 
+ static void cal_md_settings_v2(struct device_node *node)
+@@ -1443,23 +1679,11 @@ int ccci_util_fo_init(void)
+ 		return 0;
+ 	}
+ 
+-	if (!s_g_md_usage_case) {
+-		/* Enter here mean's kernel dt not reserve memory */
+-		/* So, change to using kernel option to deside if modem is enabled */
+-		if (ccci_get_opt_val("opt_md1_support") > 0)
+-			s_g_md_usage_case |= (1 << MD_SYS1);
+-
+-		if (ccci_get_opt_val("opt_md3_support") > 0)
+-			s_g_md_usage_case |= (1 << MD_SYS3);
+-
+-	}
+-
+ 	node = of_find_compatible_node(NULL, NULL, "mediatek,ccci_util_cfg");
+ 	if (node == NULL) {
+ 		CCCI_UTIL_INF_MSG("using v1.\n");
+-		/* lk_meta_tag_info_collect(); */
+ 		/* Parse META setting */
+-		ccci_parse_meta_md_setting(md_info_tag_val);
++		ccci_parse_meta_md_setting();
+ 
+ 		/* Calculate memory layout */
+ 		for (idx = 0; idx < MAX_MD_NUM_AT_LK; idx++)

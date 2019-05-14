@@ -1,0 +1,11 @@
+--- drivers/misc/mediatek/pmic/include/pmic.h
++++ drivers/misc/mediatek/pmic/include/pmic.h
+@@ -36,8 +36,6 @@
+ 
+ #ifdef CONFIG_MTK_PMIC_CHIP_MT6353
+ #include "mt6353/mt_pmic_info.h"
+-extern void sched_show_task_local(struct task_struct *p);
+-extern int pmic_chk_intf(void);
+ #endif
+ 
+ #define PMIC_EN REGULATOR_CHANGE_STATUS

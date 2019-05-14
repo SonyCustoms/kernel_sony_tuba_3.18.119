@@ -109,11 +109,11 @@ int ccci_get_ccmni_channel(int md_id, int ccmni_idx, struct ccmni_ch *channel)
 		channel->multiq = md_id == MD_SYS1 ? 1 : 0;
 		break;
 	case 8: /* a replica for ccmni-lan, so should not be used */
-		channel->rx = CCCI_CCMNILAN_RX;
+		channel->rx = CCCI_INVALID_CH_ID;
 		channel->rx_ack = 0xFF;
-		channel->tx = CCCI_CCMNILAN_TX;
+		channel->tx = CCCI_INVALID_CH_ID;
 		channel->tx_ack = 0xFF;
-		channel->dl_ack = CCCI_CCMNILAN_TX;
+		channel->dl_ack = CCCI_INVALID_CH_ID;
 		channel->multiq = 0;
 		break;
 	case 9:
@@ -194,7 +194,7 @@ int ccci_get_ccmni_channel(int md_id, int ccmni_idx, struct ccmni_ch *channel)
 		channel->rx_ack = 0xFF;
 		channel->tx = CCCI_CCMNILAN_TX;
 		channel->tx_ack = 0xFF;
-		channel->dl_ack = CCCI_CCMNILAN_TX;
+		channel->dl_ack = CCCI_CCMNILAN_DLACK_RX;
 		channel->multiq = 0;
 		break;
 #endif
@@ -436,23 +436,25 @@ static void port_net_md_state_notice(struct ccci_port *port, MD_STATE state)
 {
 	int dir = state & 0x10000000;
 	int qno = (state & 0x00FF0000) >> 16;
+	int is_ack = 0;
 
 	state = state & 0x0000FFFF;
-
+	if (dir == OUT && qno == NET_ACK_TXQ_INDEX(port) && port->txq_index != qno)
+		is_ack = 1;
 	if (port->md_id != MD_SYS3) {
-		if (((state == TX_IRQ) && ((port->flags & PORT_F_RX_FULLED) == 0)) ||
-			((state == TX_FULL) && (port->flags & PORT_F_RX_FULLED)))
+		if (((state == TX_IRQ) &&
+				((!is_ack && ((port->flags & PORT_F_TX_DATA_FULLED) == 0)) ||
+				(is_ack && ((port->flags & PORT_F_TX_ACK_FULLED) == 0)))))
 			return;
 	}
-	ccmni_ops.md_state_callback(port->md_id, GET_CCMNI_IDX(port), state,
-		(dir == OUT && qno == NET_ACK_TXQ_INDEX(port)));
+	ccmni_ops.md_state_callback(port->md_id, GET_CCMNI_IDX(port), state, is_ack);
 
 	switch (state) {
 	case TX_IRQ:
-		port->flags &= ~PORT_F_RX_FULLED;
+		port->flags &= ~(is_ack ? PORT_F_TX_ACK_FULLED : PORT_F_TX_DATA_FULLED);
 		break;
 	case TX_FULL:
-		port->flags |= PORT_F_RX_FULLED;	/* for convenient in traffic log */
+		port->flags |= (is_ack ? PORT_F_TX_ACK_FULLED : PORT_F_TX_DATA_FULLED);
 		break;
 	default:
 		break;

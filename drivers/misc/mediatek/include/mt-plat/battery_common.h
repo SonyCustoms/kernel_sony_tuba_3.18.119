@@ -218,6 +218,7 @@ typedef struct {
 	signed int charger_protect_status;
 	signed int ICharging;
 	signed int IBattery;
+	signed int CURRENT_NOW;
 	signed int temperature;
 	signed int temperatureR;
 	signed int temperatureV;
@@ -450,7 +451,7 @@ extern void mt_usb_disconnect(void);
 #define mt_usb_connect() do { } while (0)
 #define mt_usb_disconnect() do { } while (0)
 #endif
-
+extern bool gDisableGM;
 
 
 

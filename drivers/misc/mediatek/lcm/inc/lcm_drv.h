@@ -466,7 +466,7 @@ typedef struct {
 
 
 /* --------------------------------------------------------------------------- */
-#define RT_MAX_NUM 10
+#define RT_MAX_NUM 20
 #define ESD_CHECK_NUM 3
 typedef struct {
 	unsigned char cmd;
@@ -632,6 +632,7 @@ typedef struct {
 	unsigned int height;
 	unsigned int virtual_width;
 	unsigned int virtual_height;
+	unsigned int density;
 	unsigned int io_select_mode;	/* DBI or DPI should select IO mode according to chip spec */
 
 	/* particular parameters */
@@ -764,6 +765,10 @@ typedef struct {
 	void (*dsi_set_cmdq_V3)(LCM_setting_table_V3 *para_list, unsigned int size,
 				 unsigned char force_update);
 	void (*dsi_set_cmdq_V2)(unsigned cmd, unsigned char count, unsigned char *para_list,
+				 unsigned char force_update);
+	void (*dsi_set_cmdq_V2_DCS)(unsigned cmd, unsigned char count, unsigned char *para_list,
+				 unsigned char force_update);
+	void (*dsi_set_cmdq_V2_generic)(unsigned cmd, unsigned char count, unsigned char *para_list,
 				 unsigned char force_update);
 	void (*dsi_set_cmdq)(unsigned int *pdata, unsigned int queue_size,
 			      unsigned char force_update);

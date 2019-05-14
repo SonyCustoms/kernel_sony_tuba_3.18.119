@@ -32,7 +32,12 @@ typedef enum {
 	ION_MM_SET_DEBUG_INFO,
 	ION_MM_GET_DEBUG_INFO,
 	ION_MM_SET_SF_BUF_INFO,
-	ION_MM_GET_SF_BUF_INFO
+	ION_MM_GET_SF_BUF_INFO,
+	ION_MM_CONFIG_BUFFER_EXT,
+	ION_MM_ACQ_CACHE_POOL,
+	ION_MM_QRY_CACHE_POOL,
+	ION_MM_GET_IOVA,
+	ION_MM_GET_IOVA_EXT,
 } ION_MM_CMDS;
 
 typedef enum {
@@ -111,7 +116,7 @@ typedef struct ion_sys_get_phys_param {
 	unsigned long len;
 } ion_sys_get_phys_param_t;
 
-#define ION_MM_DBG_NAME_LEN 16
+#define ION_MM_DBG_NAME_LEN 48
 #define ION_MM_SF_BUF_INFO_LEN 16
 
 typedef struct __ion_sys_client_name {
@@ -158,6 +163,8 @@ typedef struct ion_mm_config_buffer_param {
 	int eModuleID;
 	unsigned int security;
 	unsigned int coherent;
+	unsigned int reserve_iova_start;
+	unsigned int reserve_iova_end;
 } ion_mm_config_buffer_param_t;
 
 
@@ -181,12 +188,35 @@ typedef struct __ion_mm_sf_buf_info {
 	unsigned int info[ION_MM_SF_BUF_INFO_LEN];
 } ion_mm_sf_buf_info_t;
 
+struct ion_mm_pool_info {
+	size_t len;
+	size_t align;
+	unsigned int heap_id_mask;
+	unsigned int flags;
+	unsigned int ret;
+};
+
+struct ion_mm_get_iova_param {
+	union {
+		ion_user_handle_t handle;
+		struct ion_handle *kernel_handle;
+	};
+	int module_id;
+	unsigned int security;
+	unsigned int coherent;
+	unsigned int reserve_iova_start;
+	unsigned int reserve_iova_end;
+	u64 phy_addr;
+	unsigned long len;
+};
+
 typedef struct ion_mm_data {
 	ION_MM_CMDS mm_cmd;
 	union {
 		ion_mm_config_buffer_param_t config_buffer_param;
 		ion_mm_buf_debug_info_t buf_debug_info_param;
-		ion_mm_sf_buf_info_t sf_buf_info_param;
+		struct ion_mm_pool_info pool_info_param;
+		struct ion_mm_get_iova_param get_phys_param;
 	};
 } ion_mm_data_t;
 
@@ -243,7 +273,7 @@ int ion_device_destroy_heaps(struct ion_device *dev);
 
 struct ion_heap *ion_sec_heap_create(struct ion_platform_heap *unused);
 void ion_sec_heap_destroy(struct ion_heap *heap);
-
+void ion_sec_heap_dump_info(void);
 
 #endif
 

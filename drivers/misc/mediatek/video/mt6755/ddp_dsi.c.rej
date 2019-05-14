@@ -1,0 +1,51 @@
+--- drivers/misc/mediatek/video/mt6755/ddp_dsi.c
++++ drivers/misc/mediatek/video/mt6755/ddp_dsi.c
+@@ -1839,7 +1840,7 @@ DSI_STATUS DSI_EnableVM_CMD(DISP_MODULE_ENUM module, cmdqRecHandle cmdq)
+ 	int i = 0;
+ 
+ 	if (cmdq)
+-		DSI_MASKREG32(cmdq, &DSI_REG[0]->DSI_INTSTA, 0x00000020, 0x00000000);
++		DSI_MASKREG32(cmdq, &DSI_REG[0]->DSI_INTSTA, 0x00000020, 0);
+ 	else
+ 		wait_vm_cmd_done = false;
+ 
+@@ -1852,10 +1853,9 @@ DSI_STATUS DSI_EnableVM_CMD(DISP_MODULE_ENUM module, cmdqRecHandle cmdq)
+ 		DSI_OUTREGBIT(cmdq, DSI_START_REG, DSI_REG[0]->DSI_START, VM_CMD_START, 0);
+ 		DSI_OUTREGBIT(cmdq, DSI_START_REG, DSI_REG[0]->DSI_START, VM_CMD_START, 1);
+ 	}
+-	if (cmdq) {
+-		DSI_POLLREG32(cmdq, &DSI_REG[0]->DSI_INTSTA, 0x00000020, 0x00000020);
+-		DSI_MASKREG32(cmdq, &DSI_REG[0]->DSI_INTSTA, 0x00000020, 0x00000000);
+-	} else
++	if (cmdq)
++		DSI_POLLREG32(cmdq, &DSI_REG[0]->DSI_INTSTA, 0x00000020, 1);
++	else
+ 		wait_event_interruptible(_dsi_wait_vm_cmd_done_queue[0], wait_vm_cmd_done);
+ 
+ 	return DSI_STATUS_OK;
+@@ -2933,7 +2937,7 @@ int ddp_dsi_init(DISP_MODULE_ENUM module, void *cmdq)
+ 		DSI_OUTREGBIT(NULL, DSI_INT_ENABLE_REG, DSI_REG[0]->DSI_INTEN, VM_DONE, 1);
+ 		/* enable te_rdy when need, not here (both cmd mode & vdo mode) */
+ 		/* DSI_OUTREGBIT(NULL, DSI_INT_ENABLE_REG,DSI_REG[0]->DSI_INTEN,TE_RDY,1); */
+-		DSI_OUTREGBIT(NULL, DSI_INT_ENABLE_REG, DSI_REG[0]->DSI_INTEN, VM_CMD_DONE, 0);
++		DSI_OUTREGBIT(NULL, DSI_INT_ENABLE_REG, DSI_REG[0]->DSI_INTEN, VM_CMD_DONE, 1);
+ 		DSI_OUTREGBIT(NULL, DSI_INT_ENABLE_REG, DSI_REG[0]->DSI_INTEN, SLEEPOUT_DONE, 1);
+ 		/* DSI_OUTREGBIT(NULL, DSI_INT_ENABLE_REG,DSI_REG[0]->DSI_INTEN,FRAME_DONE_INT_EN,0); */
+ 		DSI_BackupRegisters(module, NULL);
+@@ -3251,16 +3255,6 @@ int ddp_dsi_stop(DISP_MODULE_ENUM module, void *cmdq_handle)
+ 	return 0;
+ }
+ 
+-/*TUI will use the api*/
+-int dsi_enable_irq(DISP_MODULE_ENUM module, void *handle, unsigned int enable)
+-{
+-	if (module == DISP_MODULE_DSI0)
+-		DSI_OUTREGBIT(handle, DSI_INT_ENABLE_REG, DSI_REG[0]->DSI_INTEN, FRAME_DONE_INT_EN, enable);
+-
+-	return 0;
+-}
+-
+-
+ int ddp_dsi_switch_lcm_mode(DISP_MODULE_ENUM module, void *params)
+ {
+ 	int i = 0;

@@ -122,6 +122,8 @@ static struct i2c_board_info i2c_devs2 __initdata = {I2C_BOARD_INFO(CAMERA_HW_DR
 	struct regulator *regMain2VCAMD = NULL;
 #endif
 
+#define FEATURE_CONTROL_MAX_DATA_SIZE 128000
+
 struct device *sensor_device = NULL;
 #define SENSOR_WR32(addr, data)    mt65xx_reg_sync_writel(data, addr)    /* For 89 Only.   // NEED_TUNING_BY_PROJECT */
 /* #define SENSOR_WR32(addr, data)    iowrite32(data, addr)    // For 89 Only.   // NEED_TUNING_BY_PROJECT */
@@ -2048,6 +2050,12 @@ inline static int  adopt_CAMERA_HW_FeatureControl(void *pBuf)
 			return -EFAULT;
 		}
 
+		/* data size exam */
+		if (FeatureParaLen > FEATURE_CONTROL_MAX_DATA_SIZE) {
+			PK_ERR(" exceed data size limitation\n");
+			return -EFAULT;
+		}
+
 		pFeaturePara = kmalloc(FeatureParaLen, GFP_KERNEL);
 		if (NULL == pFeaturePara) {
 			PK_ERR(" ioctl allocate mem failed\n");
@@ -2650,7 +2658,16 @@ inline static int  adopt_CAMERA_HW_FeatureControl(void *pBuf)
 
 			unsigned long long *pFeaturePara_64=(unsigned long long *) pFeaturePara;
 			void *usr_ptr = (void *)(uintptr_t)(*(pFeaturePara_64 + 1));
-			#if 1
+			kal_uint32 buf_sz = (kal_uint32) (*(pFeaturePara_64 + 2));
+
+			/* buffer size exam */
+			if (buf_sz > PDAF_DATA_SIZE) {
+				kfree(pFeaturePara);
+				PK_ERR(" buffer size (%u) can't larger than %d bytes\n",
+					buf_sz, PDAF_DATA_SIZE);
+				return -EINVAL;
+			}
+
 			pPdaf_data = kmalloc(sizeof(char) * PDAF_DATA_SIZE, GFP_KERNEL);
 			if (pPdaf_data == NULL) {
 				PK_ERR(" ioctl allocate mem failed\n");
@@ -2660,7 +2677,7 @@ inline static int  adopt_CAMERA_HW_FeatureControl(void *pBuf)
 			memset(pPdaf_data, 0xff, sizeof(char) * PDAF_DATA_SIZE);
 
 			if (pFeaturePara_64 != NULL) {
-				*(pFeaturePara_64 + 1) = (uintptr_t)pPdaf_data;//*(pFeaturePara_64 + 1) = (uintptr_t)pPdaf_data;
+				*(pFeaturePara_64 + 1) = (uintptr_t)pPdaf_data;
 			}
 			if (g_pSensorFunc) {
 				ret =
@@ -2674,15 +2691,14 @@ inline static int  adopt_CAMERA_HW_FeatureControl(void *pBuf)
 				PK_DBG("[CAMERA_HW]ERROR:NULL g_pSensorFunc\n");
 			}
 
-			if (copy_to_user
-			    ((void __user *)usr_ptr, (void *)pPdaf_data,
-			     (kal_uint32) (*(pFeaturePara_64 + 2)))) {
-				PK_DBG("[CAMERA_HW]ERROR: copy_to_user fail \n");
+			if (copy_to_user(
+				(void __user *)usr_ptr, (void *)pPdaf_data,
+				buf_sz)) {
+				PK_DBG("[CAMERA_HW]ERROR: copy_to_user fail\n");
 			}
 			kfree(pPdaf_data);
 			*(pFeaturePara_64 + 1) =(uintptr_t) usr_ptr;
 
-#endif
 		}
 		break;
 	default:
@@ -2837,7 +2853,7 @@ inline static int kdSetSensorMclk(int *pBuf)
 
     PK_DBG("[CAMERA SENSOR] kdSetSensorMclk on=%d, freq= %d\n", pSensorCtrl->on, pSensorCtrl->freq);
 	if (1 == pSensorCtrl->on
-	    && (0 < (pSensorCtrl->freq) && (pSensorCtrl->freq) < MCLK_MAX_GROUP)) {
+	    && (((pSensorCtrl->freq) == MCLK_48MHZ_GROUP) || ((pSensorCtrl->freq) == MCLK_52MHZ_GROUP))) {
 		clkmux_sel(MT_MUX_CAMTG, pSensorCtrl->freq, "CAMERA_SENSOR");
 	}
     return ret;
@@ -3009,24 +3025,24 @@ bool Get_Cam_Regulator(void)
 
 bool _hwPowerOn(PowerType type, int powerVolt)
 {
-    bool ret = FALSE;
+	bool ret = FALSE;
 	struct regulator *reg = NULL;
 
 	PK_DBG("[_hwPowerOn]powertype:%d powerId:%d\n", type, powerVolt);
-    if (type == AVDD) {
-	reg = regVCAMA;
-    } else if (type == DVDD) {
-	reg = regVCAMD;
-    } else if (type == DOVDD) {
-	reg = regVCAMIO;
-    } else if (type == AFVDD) {
-	reg = regVCAMAF;
-    } else if (type == SUB_DVDD) {
-	reg = regSubVCAMD;
-    } else if (type == MAIN2_DVDD) {
-	reg = regMain2VCAMD;
-    } else
-    	return ret;
+	if (type == AVDD) {
+		reg = regVCAMA;
+	} else if (type == DVDD) {
+		reg = regVCAMD;
+	} else if (type == DOVDD) {
+		reg = regVCAMIO;
+	} else if (type == AFVDD) {
+		reg = regVCAMAF;
+	} else if (type == SUB_DVDD) {
+		reg = regSubVCAMD;
+	} else if (type == MAIN2_DVDD) {
+		reg = regMain2VCAMD;
+	} else
+		return ret;
 
 	if (!IS_ERR(reg)) {
 #ifdef CONFIG_MTK_PMIC_CHIP_MT6353

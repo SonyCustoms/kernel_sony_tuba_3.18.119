@@ -1,0 +1,25 @@
+--- drivers/misc/mediatek/power/mt6755/battery_meter_hal.c
++++ drivers/misc/mediatek/power/mt6755/battery_meter_hal.c
+@@ -398,11 +399,10 @@ static signed int fgauge_read_current(void *data)
+ 	int m = 0;
+ 	long long Temp_Value = 0;
+ 	signed int Current_Compensate_Value = 0;
+-#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
+-#else
+ 	unsigned int ret = 0;
+-#endif
+ 
++
++	fgadc_hal_lock();
+ 	/* HW Init
+ 	 * (1)    i2c_write (0x60, 0xC8, 0x01); // Enable VA2
+ 	 * (2)    i2c_write (0x61, 0x15, 0x00); // Enable FGADC clock for digital
+@@ -1409,6 +1554,8 @@ signed int bm_ctrl_cmd(BATTERY_METER_CTRL_CMD cmd, void *data)
+ 		bm_func[BATTERY_METER_CMD_GET_BATTERY_PLUG_STATUS] = read_battery_plug_out_status;
+ 		bm_func[BATTERY_METER_CMD_GET_HW_FG_CAR_ACT] = fgauge_read_columb_accurate;
+ 		bm_func[BATTERY_METER_CMD_GET_IS_HW_OCV_READY] = read_is_hw_ocv_ready;
++		bm_func[BATTERY_METER_CMD_SET_META_CALI_CURRENT] = fgauge_set_meta_cali_current;
++		bm_func[BATTERY_METER_CMD_META_CALI_CAR_TUNE_VALUE] = fgauge_meta_cali_car_tune_value;
+ 	}
+ 
+ 	if (cmd < BATTERY_METER_CMD_NUMBER) {

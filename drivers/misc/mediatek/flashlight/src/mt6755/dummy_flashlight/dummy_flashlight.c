@@ -28,6 +28,8 @@
 #include <linux/errno.h>
 #include <linux/time.h>
 #include "kd_flashlight.h"
+#include "kd_flashlight_type.h"
+
 #include <asm/io.h>
 #include <asm/uaccess.h>
 /* #include <mach/mt6516_typedefs.h> */

@@ -51,6 +51,22 @@
 #ifdef CONFIG_MTK_MTD_NAND
 #include <asm/cache.h>		/* for ARCH_DMA_MINALIGN */
 #endif
+#ifdef CONFIG_EVENT_MTK_NAND_DRIVER
+#include <trace/events/mtk_nand.h>
+#define EVT_RD_BEGIN(len, from)     trace_nand_read_begin(len, from)
+#define EVT_RD_END(len, from)       trace_nand_read_end(len, from)
+#define EVT_WR_BEGIN(len, to)       trace_nand_write_begin(len, to)
+#define EVT_WR_END(len, to)         trace_nand_write_end(len, to)
+#define EVT_ER_BEGIN(len, addr)     trace_nand_erase_begin(len, addr)
+#define EVT_ER_END(len, addr)       trace_nand_erase_end(len, addr)
+#else
+#define EVT_RD_BEGIN(len, from)
+#define EVT_RD_END(len, from)
+#define EVT_WR_BEGIN(len, to)
+#define EVT_WR_END(len, to)
+#define EVT_ER_BEGIN(len, addr)
+#define EVT_ER_END(len, addr)
+#endif
 #include <asm/div64.h>
 #ifdef MTD_NAND_PFM
 #include <linux/time.h>
@@ -772,7 +788,8 @@ static void nand_command(struct mtd_info *mtd, unsigned int command,
 		chip->cmd_ctrl(mtd, readcmd, ctrl);
 		ctrl &= ~NAND_CTRL_CHANGE;
 	}
-	chip->cmd_ctrl(mtd, command, ctrl);
+	if (command != NAND_CMD_NONE)
+		chip->cmd_ctrl(mtd, command, ctrl);
 
 	/* Address cycle, when necessary */
 	ctrl = NAND_CTRL_ALE | NAND_CTRL_CHANGE;
@@ -801,6 +818,7 @@ static void nand_command(struct mtd_info *mtd, unsigned int command,
 	 */
 	switch (command) {
 
+	case NAND_CMD_NONE:
 	case NAND_CMD_PAGEPROG:
 	case NAND_CMD_ERASE1:
 	case NAND_CMD_ERASE2:
@@ -863,7 +881,9 @@ static void nand_command_lp(struct mtd_info *mtd, unsigned int command,
 	}
 
 	/* Command latch cycle */
-	chip->cmd_ctrl(mtd, command, NAND_NCE | NAND_CLE | NAND_CTRL_CHANGE);
+	if (command != NAND_CMD_NONE)
+		chip->cmd_ctrl(mtd, command,
+			       NAND_NCE | NAND_CLE | NAND_CTRL_CHANGE);
 
 	if (column != -1 || page_addr != -1) {
 		int ctrl = NAND_CTRL_CHANGE | NAND_NCE | NAND_ALE;
@@ -896,6 +916,7 @@ static void nand_command_lp(struct mtd_info *mtd, unsigned int command,
 	 */
 	switch (command) {
 
+	case NAND_CMD_NONE:
 	case NAND_CMD_CACHEDPROG:
 	case NAND_CMD_PAGEPROG:
 	case NAND_CMD_ERASE1:
@@ -2477,6 +2498,7 @@ static int nand_read(struct mtd_info *mtd, loff_t from, size_t len,
 	ops.datbuf = buf;
 	ops.oobbuf = NULL;
 	ops.mode = MTD_OPS_PLACE_OOB;
+	EVT_RD_BEGIN((u64)len, (u64)from);
 #ifdef CONFIG_MTK_MTD_NAND
 #if defined(CONFIG_MTK_TLC_NAND_SUPPORT)
 	if (likely(len > mtd->writesize)) {
@@ -2523,6 +2545,7 @@ static int nand_read(struct mtd_info *mtd, loff_t from, size_t len,
 		PFM_END_R_SLC(pfm_time_read, (*retlen));
 
 	#endif
+	EVT_RD_END((u64)(*retlen), (u64)from);
 	return ret;
 }
 
@@ -2672,6 +2695,7 @@ static int nand_write_oob_syndrome(struct mtd_info *mtd,
 static int nand_do_read_oob(struct mtd_info *mtd, loff_t from,
 			    struct mtd_oob_ops *ops)
 {
+	unsigned int max_bitflips = 0;
 	int page, realpage, chipnr;
 	struct nand_chip *chip = mtd->priv;
 	struct mtd_ecc_stats stats;
@@ -2771,6 +2795,8 @@ static int nand_do_read_oob(struct mtd_info *mtd, loff_t from,
 				nand_wait_ready(mtd);
 		}
 
+		max_bitflips = max_t(unsigned int, max_bitflips, ret);
+
 		readlen -= len;
 		if (!readlen)
 			break;
@@ -2800,7 +2826,7 @@ static int nand_do_read_oob(struct mtd_info *mtd, loff_t from,
 	if (mtd->ecc_stats.failed - stats.failed)
 		return -EBADMSG;
 
-	return  mtd->ecc_stats.corrected - stats.corrected ? -EUCLEAN : 0;
+	return max_bitflips;
 }
 
 /**
@@ -3324,7 +3350,7 @@ static int nand_do_write_ops(struct mtd_info *mtd, loff_t to,
 		int cached = writelen > bytes && page != blockmask;
 		uint8_t *wbuf = buf;
 		int use_bufpoi;
-		int part_pagewr = (column || writelen < (mtd->writesize - 1));
+		int part_pagewr = (column || writelen < mtd->writesize);
 
 		if (part_pagewr)
 			use_bufpoi = 1;
@@ -3406,6 +3432,7 @@ static int panic_nand_write(struct mtd_info *mtd, loff_t to, size_t len,
 			    size_t *retlen, const uint8_t *buf)
 {
 	struct nand_chip *chip = mtd->priv;
+	int chipnr = (int)(to >> chip->chip_shift);
 	struct mtd_oob_ops ops;
 	int ret;
 
@@ -3417,6 +3444,11 @@ static int panic_nand_write(struct mtd_info *mtd, loff_t to, size_t len,
 
 	/* Grab the device */
 	panic_nand_get_device(chip, mtd, FL_WRITING);
+
+	chip->select_chip(mtd, chipnr);
+
+	/* Wait for the device to get ready */
+	panic_nand_wait(mtd, chip, 400);
 
 	ops.len = len;
 	ops.datbuf = (uint8_t *)buf;
@@ -3457,6 +3489,7 @@ static int nand_write(struct mtd_info *mtd, loff_t to, size_t len,
 	PFM_BEGIN(pfm_time_write);
 	#endif
 
+	EVT_WR_BEGIN((u64)len, (u64)to);
 	nand_get_device(mtd, FL_WRITING);
 
 #if defined(CONFIG_MTK_TLC_NAND_SUPPORT)
@@ -3486,6 +3519,7 @@ static int nand_write(struct mtd_info *mtd, loff_t to, size_t len,
 		PFM_END_W_SLC(pfm_time_write, (*retlen));
 
 	#endif
+	EVT_WR_END((u64)(*retlen), (u64)to);
 	return ret;
 }
 
@@ -3707,6 +3741,7 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
 	if (check_offs_len(mtd, instr->addr, instr->len))
 		return -EINVAL;
 
+	EVT_ER_BEGIN((u64)instr->len, (u64)instr->addr);
 	/* Grab the lock and see if the device is available */
 	nand_get_device(mtd, FL_ERASING);
 
@@ -3842,6 +3877,7 @@ erase_exit:
 
 	ret = instr->state == MTD_ERASE_DONE ? 0 : -EIO;
 
+	EVT_ER_END((u64)instr->len, (u64)instr->addr);
 	/* Deselect and wake up anyone waiting on the device */
 	chip->select_chip(mtd, -1);
 	nand_release_device(mtd);

@@ -73,6 +73,8 @@
  *=============================================================*/
 static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
+static DEFINE_SEMAPHORE(sem_mutex);
+static int isTimerCancelled;
 
 #if !defined(CONFIG_MTK_CLKMGR)
 struct clk *therm_main;		/* main clock for Thermal */
@@ -143,7 +145,7 @@ static bool talking_flag;
 static int kernelmode;
 static int g_THERMAL_TRIP[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
-static int temperature_switch;
+
 
 #if defined(TZCPU_SET_INIT_CFG)
 static int num_trip = TZCPU_INITCFG_NUM_TRIPS;
@@ -154,7 +156,6 @@ static int tscpu_num_opp;
 static struct mtk_cpu_power_info *mtk_cpu_power;
 
 static int g_tc_resume;	/* default=0,read temp */
-static int MA_len_temp;
 static int proc_write_flag;
 
 static struct thermal_zone_device *thz_dev;
@@ -863,7 +864,7 @@ static ssize_t tscpu_write_GPIO_out(struct file *file, const char __user *buffer
 
 	desc[len] = '\0';
 
-	if (sscanf(desc, "%s %d %s %d ", TEMP, &valTEMP, ENABLE, &valENABLE) == 4) {
+	if (sscanf(desc, "%9s %d %9s %d ", TEMP, &valTEMP, ENABLE, &valENABLE) == 4) {
 		/* tscpu_printk("XXXXXXXXX\n"); */
 
 		if (!strcmp(TEMP, "TEMP")) {
@@ -959,43 +960,9 @@ static ssize_t tscpu_talking_flag_write(struct file *file, const char __user *bu
 	return -EINVAL;
 }
 
-static int tscpu_set_temperature_read(struct seq_file *m, void *v)
-{
 
 
-	seq_printf(m, "%d\n", temperature_switch);
 
-	return 0;
-}
-
-
-static ssize_t tscpu_set_temperature_write(struct file *file, const char __user *buffer,
-					   size_t count, loff_t *data)
-{
-	char desc[32];
-	int lv_tempe_switch;
-	int len = 0;
-
-	len = (count < (sizeof(desc) - 1)) ? count : (sizeof(desc) - 1);
-	if (copy_from_user(desc, buffer, len))
-		return 0;
-
-	desc[len] = '\0';
-
-	tscpu_dprintk("tscpu_set_temperature_write\n");
-
-	if (kstrtoint(desc, 10, &lv_tempe_switch) == 0) {
-		temperature_switch = lv_tempe_switch;
-
-		tscpu_config_all_tc_hw_protect(temperature_switch, tc_mid_trip);
-
-		tscpu_dprintk("tscpu_set_temperature_write temperature_switch=%d\n",
-			      temperature_switch);
-		return count;
-	}
-	tscpu_warn("tscpu_set_temperature_write bad argument\n");
-	return -EINVAL;
-}
 
 #if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
 static int tscpu_pmic_current_limit_read(struct seq_file *m, void *v)
@@ -1188,7 +1155,7 @@ static ssize_t tscpu_write(struct file *file, const char __user *buffer, size_t 
 	len = (count < (sizeof(ptr_mtktscpu_data->desc) - 1)) ? count : (sizeof(ptr_mtktscpu_data->desc) - 1);
 	if (copy_from_user(ptr_mtktscpu_data->desc, buffer, len)) {
 		kfree(ptr_mtktscpu_data);
-		return 0;
+		return -ENOMEM;
 	}
 
 	ptr_mtktscpu_data->desc[len] = '\0';
@@ -1208,9 +1175,6 @@ static ssize_t tscpu_write(struct file *file, const char __user *buffer, size_t 
 	     &ptr_mtktscpu_data->trip[8], &ptr_mtktscpu_data->t_type[8], ptr_mtktscpu_data->bind8,
 	     &ptr_mtktscpu_data->trip[9], &ptr_mtktscpu_data->t_type[9], ptr_mtktscpu_data->bind9,
 	     &ptr_mtktscpu_data->time_msec) == 32) {
-
-		tscpu_dprintk("tscpu_write tscpu_unregister_thermal MA_len_temp=%d\n", MA_len_temp);
-
 		/*      modify for PTPOD, if disable Thermal,
 		   PTPOD still need to use this function for getting temperature
 		 */
@@ -1218,7 +1182,8 @@ static ssize_t tscpu_write(struct file *file, const char __user *buffer, size_t 
 #if defined(CONFIG_ARCH_MT6797)
 		apthermolmt_set_general_cpu_power_limit(900);
 #endif
-
+		down(&sem_mutex);
+		tscpu_dprintk("tscpu_write tscpu_unregister_thermal\n");
 		tscpu_unregister_thermal();
 
 		if (num_trip < 0 || num_trip > 10) {
@@ -1226,6 +1191,7 @@ static ssize_t tscpu_write(struct file *file, const char __user *buffer, size_t 
 					"Bad argument");
 			tscpu_dprintk("tscpu_write bad argument\n");
 			kfree(ptr_mtktscpu_data);
+			up(&sem_mutex);
 			return -EINVAL;
 		}
 
@@ -1351,7 +1317,7 @@ static ssize_t tscpu_write(struct file *file, const char __user *buffer, size_t 
 		 */
 		tscpu_dprintk("tscpu_write tscpu_register_thermal\n");
 		tscpu_register_thermal();
-
+		up(&sem_mutex);
 #if defined(CONFIG_ARCH_MT6797)
 		apthermolmt_set_general_cpu_power_limit(0);
 #endif
@@ -1890,19 +1856,7 @@ static const struct file_operations mtktscpu_read_temperature_fops = {
 };
 
 
-static int tscpu_set_temperature_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, tscpu_set_temperature_read, NULL);
-}
 
-static const struct file_operations mtktscpu_set_temperature_fops = {
-	.owner = THIS_MODULE,
-	.open = tscpu_set_temperature_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.write = tscpu_set_temperature_write,
-	.release = single_release,
-};
 
 #if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
 static int tscpu_pmic_current_limit_open(struct inode *inode, struct file *file)
@@ -2144,6 +2098,7 @@ static void tscpu_thermal_release(void)
 }
 #endif
 
+
 static void read_all_bank_temperature(void)
 {
 	int i = 0;
@@ -2215,7 +2170,7 @@ void tscpu_update_tempinfo(void)
 #endif
 }
 
-#if defined(CONFIG_ARCH_MT6797)
+#ifdef FAST_RESPONSE_ATM
 DEFINE_SPINLOCK(timer_lock);
 int is_worktimer_en = 1;
 #endif
@@ -2223,37 +2178,67 @@ int is_worktimer_en = 1;
 void tscpu_workqueue_cancel_timer(void)
 {
 #ifdef FAST_RESPONSE_ATM
+	if (down_trylock(&sem_mutex))
+		return;
+
 	if (is_worktimer_en && thz_dev) {
 		cancel_delayed_work(&(thz_dev->poll_queue));
-
-		tscpu_dprintk("[tTimer] workqueue stopping\n");
+		isTimerCancelled = 1;
 		spin_lock(&timer_lock);
 		is_worktimer_en = 0;
 		spin_unlock(&timer_lock);
+		tscpu_dprintk("[tTimer] workqueue stopped\n");
 	}
+
+	up(&sem_mutex);
 #else
-	if (thz_dev)
+	if (down_trylock(&sem_mutex))
+		return;
+
+	if (thz_dev) {
 		cancel_delayed_work(&(thz_dev->poll_queue));
+		isTimerCancelled = 1;
+	}
+
+	up(&sem_mutex);
 #endif
 }
 
 void tscpu_workqueue_start_timer(void)
 {
 #ifdef FAST_RESPONSE_ATM
+	if (!isTimerCancelled)
+		return;
+
+	if (down_trylock(&sem_mutex))
+		return;
+
 	if (!is_worktimer_en && thz_dev != NULL && interval != 0) {
 		mod_delayed_work(system_freezable_wq, &(thz_dev->poll_queue), 0);
-
-		tscpu_dprintk("[tTimer] workqueue starting\n");
+		isTimerCancelled = 0;
 		spin_lock(&timer_lock);
 		is_worktimer_en = 1;
 		spin_unlock(&timer_lock);
+		tscpu_dprintk("[tTimer] workqueue started\n");
 	}
-#else
-	/* resume thermal framework polling when leaving deep idle */
-	if (thz_dev != NULL && interval != 0)
-		mod_delayed_work(system_freezable_wq, &(thz_dev->poll_queue), round_jiffies(msecs_to_jiffies(1000)));
-#endif
 
+	up(&sem_mutex);
+#else
+	if (!isTimerCancelled)
+		return;
+
+	if (down_trylock(&sem_mutex))
+		return;
+
+	/* resume thermal framework polling when leaving deep idle */
+	if (thz_dev != NULL && interval != 0) {
+		mod_delayed_work(system_freezable_wq, &(thz_dev->poll_queue),
+			round_jiffies(msecs_to_jiffies(1000)));
+		isTimerCancelled = 0;
+	}
+
+	up(&sem_mutex);
+#endif
 }
 
 void tscpu_cancel_thermal_timer(void)
@@ -2409,10 +2394,6 @@ static void tscpu_create_fs(void)
 		entry =
 		    proc_create("tzcpu_read_temperature", S_IRUGO, mtktscpu_dir,
 				&mtktscpu_read_temperature_fops);
-
-		entry =
-		    proc_create("tzcpu_set_temperature", S_IRUGO | S_IWUSR, mtktscpu_dir,
-				&mtktscpu_set_temperature_fops);
 
 		entry =
 		    proc_create("tzcpu_talking_flag", S_IRUGO | S_IWUSR, mtktscpu_dir,

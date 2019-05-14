@@ -33,6 +33,10 @@
 #include <linux/kthread.h>
 #include <mt-plat/aee.h>
 #include <linux/seq_file.h>
+#include <linux/jiffies.h>
+#include <linux/ptrace.h>
+#include <asm/stacktrace.h>
+#include <asm/traps.h>
 #include "aed.h"
 #include <linux/pid.h>
 #include <mt-plat/mt_boot_common.h>
@@ -52,14 +56,105 @@ static int hwt_kick_times;
 static int pwk_start_monitor;
 
 #define AEEIOCTL_RT_MON_Kick _IOR('p', 0x0A, int)
+#define MaxHangInfoSize (1024*1024)
+#define MAX_STRING_SIZE 256
+char Hang_Info[MaxHangInfoSize];	/* 1M info */
+static int Hang_Info_Size;
+static bool Hang_Detect_first;
 
-/******************************************************************************
- * FUNCTION PROTOTYPES
- *****************************************************************************/
+
+#define HD_PROC "hang_detect"
+#define	COUNT_SWT_INIT	0
+#define	COUNT_SWT_NORMAL	10
+#define	COUNT_SWT_FIRST		12
+#define	COUNT_ANDROID_REBOOT	11
+#define	COUNT_SWT_CREATE_DB	14
+#define	COUNT_NE_EXCEPION	20
+#define	COUNT_AEE_COREDUMP	40
+#define	COUNT_COREDUMP_DONE	19
+
+/* static DEFINE_SPINLOCK(hd_locked_up); */
+#define HD_INTER 30
+
+static int hd_detect_enabled;
+static int hd_timeout = 0x7fffffff;
+static int hang_detect_counter = 0x7fffffff;
+static int dump_bt_done;
+#ifdef CONFIG_MT_ENG_BUILD
+static int hang_aee_warn = 2;
+#else
+static int hang_aee_warn;
+#endif
+static int system_server_pid;
+static bool watchdog_thread_exist;
+DECLARE_WAIT_QUEUE_HEAD(dump_bt_start_wait);
+DECLARE_WAIT_QUEUE_HEAD(dump_bt_done_wait);
 static long monitor_hang_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+#ifdef CONFIG_MT_ENG_BUILD
+static int monit_hang_flag = 1;
+#define SEQ_printf(m, x...) \
+do {                \
+	if (m)          \
+		seq_printf(m, x);   \
+	else            \
+		pr_debug(x);        \
+} while (0)
 
 
 
+static int monitor_hang_show(struct seq_file *m, void *v)
+{
+	SEQ_printf(m, "[Hang_Detect] show Hang_info size %d\n ", (int)strlen(Hang_Info));
+	SEQ_printf(m, "%s", Hang_Info);
+	return 0;
+}
+
+static int monitor_hang_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, monitor_hang_show, inode->i_private);
+}
+
+
+static ssize_t monitor_hang_proc_write(struct file *filp, const char *ubuf, size_t cnt, loff_t *data)
+{
+	char buf[64];
+	long val;
+	int ret;
+
+	if (cnt >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(&buf, ubuf, cnt))
+		return -EFAULT;
+
+	buf[cnt] = 0;
+
+	ret = kstrtoul(buf, 10, (unsigned long *)&val);
+
+	if (ret < 0)
+		return ret;
+
+	if (val == 1) {
+		monit_hang_flag = 1;
+		pr_debug("[hang_detect] enable ke.\n");
+	} else if (val == 0) {
+		monit_hang_flag = 0;
+		pr_debug("[hang_detect] disable ke.\n");
+	} else if (val > 10) {
+		show_native_bt_by_pid((int)val);
+	}
+
+	return cnt;
+}
+
+static const struct file_operations monitor_hang_fops = {
+	.open = monitor_hang_proc_open,
+	.write = monitor_hang_proc_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 /******************************************************************************
  * hang detect File operations
  *****************************************************************************/
@@ -129,7 +224,7 @@ static long monitor_hang_ioctl(struct file *file, unsigned int cmd, unsigned lon
 	}
 	/* QHQ RT Monitor */
 	if (cmd == AEEIOCTL_RT_MON_Kick) {
-		LOGE("AEEIOCTL_RT_MON_Kick ( %d)\n", (int)arg);
+		pr_info("AEEIOCTL_RT_MON_Kick ( %d)\n", (int)arg);
 		aee_kernel_RT_Monitor_api((int)arg);
 		return ret;
 	}
@@ -139,7 +234,8 @@ static long monitor_hang_ioctl(struct file *file, unsigned int cmd, unsigned lon
 	   (int)AEEIOCTL_RT_MON_Kick); */
 	/* QHQ RT Monitor end */
 
-	if (cmd == AEEIOCTL_SET_SF_STATE) {
+	if ((cmd == AEEIOCTL_SET_SF_STATE) && (!strncmp(current->comm, "surfaceflinger", 10) ||
+						!strncmp(current->comm, "SWWatchDog", 10))) {
 		if (copy_from_user(&monitor_status, (void __user *)arg, sizeof(long long)))
 			ret = -1;
 		LOGE("AEE_MONITOR_SET[status]: 0x%llx", monitor_status);
@@ -150,7 +246,21 @@ static long monitor_hang_ioctl(struct file *file, unsigned int cmd, unsigned lon
 		return ret;
 	}
 
-	return -1;
+	if ((cmd == AEEIOCTL_SET_HANG_FLAG) &&
+		(!strncmp(current->comm, "aee_aed", 7))) {
+		const struct cred *cred = current_cred();
+
+		if (!uid_eq(cred->euid, GLOBAL_ROOT_UID))
+			return -EACCES;
+
+		if ((int)arg == 1) {
+			hang_aee_warn = 2;
+			pr_info("hang_detect: aee enable system_server coredump.\n");
+		}
+
+	}
+
+	return ret;
 }
 
 
@@ -190,17 +300,23 @@ static int hang_detect_init(void);
 static int __init monitor_hang_init(void)
 {
 	int err = 0;
-
+#ifdef CONFIG_MT_ENG_BUILD
+	struct proc_dir_entry *pe;
+#endif
 	/* bleow code is added by QHQ  for hang detect */
 	err = misc_register(&aed_wdt_RT_Monitor_dev);
 	if (unlikely(err)) {
-		LOGE("aee: failed to register aed_wdt_RT_Monitor_dev device!\n");
+		pr_err("aee: failed to register aed_wdt_RT_Monitor_dev device!\n");
 		return err;
 	}
 	hang_detect_init();
 	/* bleow code is added by QHQ  for hang detect */
 	/* end */
-
+#ifdef CONFIG_MT_ENG_BUILD
+	pe = proc_create("monitor_hang", 0664, NULL, &monitor_hang_fops);
+	if (!pe)
+		return -ENOMEM;
+#endif
 	return err;
 }
 
@@ -487,11 +603,12 @@ void hd_test(void)
 
 void aee_kernel_RT_Monitor_api(int lParam)
 {
+	reset_hang_info();
 	if (0 == lParam) {
 		hd_detect_enabled = 0;
 		hang_detect_counter =
 			hd_timeout;
-		LOGE("[Hang_Detect] hang_detect disabled\n");
+		pr_info("[Hang_Detect] hang_detect disabled\n");
 	} else if (lParam > 0) {
 		/* lParem=0x1000|timeout,only set in aee call when NE in system_server
 		*  so only change hang_detect_counter when call from AEE
@@ -505,96 +622,27 @@ void aee_kernel_RT_Monitor_api(int lParam)
 			hang_detect_counter =
 				hd_timeout = ((long)lParam + HD_INTER - 1) / (HD_INTER);
 		}
-		LOGE("[Hang_Detect] hang_detect enabled %d\n", hd_timeout);
+		if (hd_timeout < 10) { /* hang detect min timeout is 10 (5min) */
+			hang_detect_counter = 10;
+			hd_timeout = 10;
+		}
+		pr_info("[Hang_Detect] hang_detect enabled %d\n", hd_timeout);
 	}
 }
-
-#if 0
-static int hd_proc_cmd_read(char *buf,
-		char **start,
-		off_t offset,
-		int count,
-		int *eof,
-		void *data) {
-
-	/* with a read of the /proc/hang_detect, we reset the counter. */
-	int len = 0;
-
-	LOGE("[Hang_Detect] read proc	%d\n", count);
-
-	len =
-		sprintf(buf, "%d:%d\n",
-				hang_detect_counter,
-				hd_timeout);
-
-	hang_detect_counter = hd_timeout;
-
-	return len;
-}
-
-static int hd_proc_cmd_write(struct file
-		*file,
-		const char
-		*buf,
-		unsigned long
-		count,
-		void *data) {
-
-	/* with a write function , we set the time out, in seconds. */
-	/* with a '0' argument, we set it to max int */
-	/* with negative number, we will triger a timeout, or for extension functions (future use) */
-
-	int counter = 0;
-	int retval = 0;
-
-	retval = sscanf(buf, "%d ", &counter);
-	if (retval == 0)
-		LOGE("can not identify counter!\n");
-
-	LOGE("[Hang_Detect] write	proc %d, original %d: %d\n", counter, hang_detect_counter, hd_timeout);
-
-	if (counter > 0) {
-		if (counter % HD_INTER != 0)
-			hd_timeout = 1;
-		else
-			hd_timeout = 0;
-
-		counter =
-			counter / HD_INTER;
-		hd_timeout += counter;
-	} else if (counter == 0)
-		hd_timeout = 0x7fffffff;
-	else if (counter == -1)
-		hd_test();
-	else
-		return count;
-
-	hang_detect_counter = hd_timeout;
-
-	return count;
-}
-#endif
 
 int hang_detect_init(void)
 {
 
 	struct task_struct *hd_thread;
-	/* struct proc_dir_entry *de = create_proc_entry(HD_PROC, 0664, 0); */
 
-	unsigned char *name = "hang_detect";
+	pr_debug("[Hang_Detect] Initialize proc\n");
+	hd_thread = kthread_create(hang_detect_thread, NULL, "hang_detect");
+	if (hd_thread != NULL)
+		wake_up_process(hd_thread);
 
-	LOGD("[Hang_Detect] Initialize proc\n");
-
-	/* de->read_proc = hd_proc_cmd_read; */
-	/* de->write_proc = hd_proc_cmd_write; */
-
-	LOGD("[Hang_Detect] create hang_detect thread\n");
-
-	hd_thread =
-		kthread_create
-		(hang_detect_thread, NULL,
-		 name);
-	wake_up_process(hd_thread);
+	hd_thread = kthread_create(hang_detect_dump_thread, NULL, "hang_detect1");
+	if (hd_thread != NULL)
+		wake_up_process(hd_thread);
 
 	return 0;
 }
@@ -643,6 +691,13 @@ void aee_powerkey_notify_press(unsigned long
 }
 EXPORT_SYMBOL(aee_powerkey_notify_press);
 
+void get_hang_detect_buffer(unsigned long *addr, unsigned long *size,
+			    unsigned long *start)
+{
+	*addr = (unsigned long)Hang_Info;
+	*start = 0;
+	*size = MaxHangInfoSize;
+}
 
 int aee_kernel_wdt_kick_api(int kinterval)
 {

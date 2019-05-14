@@ -1,0 +1,11 @@
+--- drivers/misc/mediatek/mu3d/drv/musb_core.c
++++ drivers/misc/mediatek/mu3d/drv/musb_core.c
+@@ -2268,7 +2211,7 @@ static int __init musb_init_controller(struct device *dev, int nIrq, void __iome
+ 	status = register_typec_switch_callback(&switch_driver);
+ 	if (status < 0)
+ 		goto fail3;
+-#endif /* CONFIG_TCPC_CLASS */
++#endif
+ #endif
+ 
+ 	/* REVISIT-J: Do _NOT_ support OTG functionality */

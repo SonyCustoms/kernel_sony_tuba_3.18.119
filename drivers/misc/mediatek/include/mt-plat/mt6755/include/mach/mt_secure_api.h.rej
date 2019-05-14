@@ -1,0 +1,10 @@
+--- drivers/misc/mediatek/include/mt-plat/mt6755/include/mach/mt_secure_api.h
++++ drivers/misc/mediatek/include/mt-plat/mt6755/include/mach/mt_secure_api.h
+@@ -39,7 +39,6 @@
+ #define MTK_SIP_KERNEL_ICACHE_DUMP          0x82000210
+ #define MTK_SIP_KERNEL_TIME_SYNC		0x82000213
+ #define MTK_SIP_KERNEL_DAPC_CLEAR_SRAMROM_VIO  0x82000230
+-
+ #define MTK_SIP_KERNEL_MSG                  0x820002ff
+ 
+ #ifdef CONFIG_ARM64

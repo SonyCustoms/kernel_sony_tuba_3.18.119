@@ -40,7 +40,7 @@ static unsigned int WARN_HRTIMER_DUR;
 static unsigned int WARN_STIMER_DUR;
 static unsigned int WARN_BURST_IRQ_DETECT;
 static unsigned int WARN_PREEMPT_DUR;
-
+static unsigned int sched_mon_door_key;
 
 enum mt_event_type {
 	evt_ISR = 1,
@@ -377,9 +377,9 @@ void mt_trace_hrt_end(void *func)
 void mt_trace_rqlock_start(raw_spinlock_t *lock)
 {
 	struct sched_lock_event *lock_e;
-	struct task_struct *owner = NULL;
 
 #ifdef CONFIG_DEBUG_SPINLOCK
+	struct task_struct *owner = NULL;
 	if (lock->owner && lock->owner != SPINLOCK_OWNER_INIT)
 		owner = lock->owner;
 #endif
@@ -755,6 +755,7 @@ static int mt_sched_monitor_show(struct seq_file *m, void *v)
 }
 void mt_sched_monitor_switch(int on)
 {
+#if 0
 	int cpu;
 
 	preempt_disable_notrace();
@@ -766,6 +767,7 @@ void mt_sched_monitor_switch(int on)
 	}
 	mutex_unlock(&mt_sched_mon_lock);
 	preempt_enable_notrace();
+#endif
 }
 
 static ssize_t mt_sched_monitor_write(struct file *filp, const char *ubuf,
@@ -774,6 +776,9 @@ static ssize_t mt_sched_monitor_write(struct file *filp, const char *ubuf,
 	char buf[64];
 	unsigned long val;
 	int ret;
+
+	if (!sched_mon_door_key)
+		return cnt;
 
 	if (cnt >= sizeof(buf))
 		return -EINVAL;
@@ -819,6 +824,9 @@ static ssize_t mt_sched_monitor_##param##_write(			\
 	unsigned long val;								\
 	int ret;								\
 											\
+	if (!sched_mon_door_key)			\
+		return cnt;						\
+									\
 	if (cnt >= sizeof(buf))					\
 		return -EINVAL;						\
 											\
@@ -829,6 +837,9 @@ static ssize_t mt_sched_monitor_##param##_write(			\
 	ret = kstrtoul(buf, 10, &val);			\
 	if (ret < 0)							\
 		return ret;							\
+											\
+	if (val < TIME_3MS)							\
+		val = TIME_3MS;							\
 											\
 	warn_dur = val;							\
 											\
@@ -865,11 +876,44 @@ DECLARE_MT_SCHED_MATCH(STIMER_DUR, WARN_STIMER_DUR);
 DECLARE_MT_SCHED_MATCH(PREEMPT_DUR, WARN_PREEMPT_DUR);
 DECLARE_MT_SCHED_MATCH(BURST_IRQ, WARN_BURST_IRQ_DETECT);
 
+static ssize_t mt_sched_monitor_door_write(struct file *filp,
+	const char *ubuf, size_t cnt, loff_t *data)
+{
+	char buf[16];
+
+	if (cnt >= sizeof(buf) || cnt <= 1UL)
+		return cnt;
+
+	if (copy_from_user(&buf, ubuf, cnt))
+		return -EFAULT;
+
+	buf[cnt-1UL] = 0;
+
+	if (strcmp("open", buf) == 0)
+		sched_mon_door_key = 1;
+	if (strcmp("close", buf) == 0)
+		sched_mon_door_key = 0;
+
+	return cnt;
+}
+
+static const struct file_operations mt_sched_monitor_door_fops = {
+	.open = simple_open,
+	.write = mt_sched_monitor_door_write,
+};
 static int __init init_mtsched_mon(void)
 {
 #ifdef CONFIG_MT_SCHED_MONITOR
 	int cpu;
 	struct proc_dir_entry *pe;
+
+	WARN_ISR_DUR = TIME_3MS;
+	WARN_SOFTIRQ_DUR = TIME_5MS;
+	WARN_TASKLET_DUR = TIME_10MS;
+	WARN_HRTIMER_DUR = TIME_3MS;
+	WARN_STIMER_DUR = TIME_10MS;
+	WARN_BURST_IRQ_DETECT = 25000;
+	WARN_PREEMPT_DUR = TIME_10MS;
 
 	for_each_possible_cpu(cpu) {
 		per_cpu(MT_stack_trace, cpu).entries =
@@ -883,14 +927,6 @@ static int __init init_mtsched_mon(void)
 		per_cpu(hrt_mon, cpu).type = evt_HRTIMER;
 		per_cpu(sft_mon, cpu).type = evt_STIMER;
 	}
-
-	WARN_ISR_DUR = TIME_3MS;
-	WARN_SOFTIRQ_DUR = TIME_5MS;
-	WARN_TASKLET_DUR = TIME_10MS;
-	WARN_HRTIMER_DUR = TIME_3MS;
-	WARN_STIMER_DUR = TIME_10MS;
-	WARN_BURST_IRQ_DETECT = 25000;
-	WARN_PREEMPT_DUR = TIME_10MS;
 
 	if (!proc_mkdir("mtmon", NULL))
 		return -1;
@@ -919,6 +955,12 @@ static int __init init_mtsched_mon(void)
 	pe = proc_create("mtmon/sched_mon_duration_PREEMPT", 0664, NULL, &mt_sched_monitor_PREEMPT_DUR_fops);
 	if (!pe)
 		return -ENOMEM;
+	pe = proc_create("mtmon/sched_mon_door", 0220, NULL,
+			&mt_sched_monitor_door_fops);
+	if (!pe)
+		return -ENOMEM;
+
+	mt_sched_monitor_test_init();
 #endif
 	return 0;
 }

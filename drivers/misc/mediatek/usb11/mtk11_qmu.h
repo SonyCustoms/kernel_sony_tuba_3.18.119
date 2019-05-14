@@ -14,7 +14,7 @@
 #ifndef _MTKFSH_QMU_H_
 #define _MTKFSH_QMU_H_
 
-#ifdef MUSBFSH_QMU_SUPPORT_HOST
+#ifdef MUSBFSH_QMU_SUPPORT
 
 /* for musb_read/write api */
 /*#include "mtk_musb.h"*/
@@ -28,8 +28,8 @@
 #define GPD_EXT_LEN (48)	/* GPD_LEN_ALIGNED - 16(should be sizeof(TGPD) */
 #define GPD_SZ (16)
 #define DFT_MAX_GPD_NUM 36
-#define RXQ_NUM 8
-#define TXQ_NUM 8
+#define RXQ_NUM 4
+#define TXQ_NUM 4
 #define MAX_QMU_EP RXQ_NUM
 #define TXQ	0
 #define RXQ	1
@@ -80,6 +80,11 @@ typedef struct _GPD_RANGE {
 
 #define QMU_DBG_ON
 #ifdef QMU_DBG_ON
+static inline int mtk11_dbg_level(unsigned level)
+{
+	return mtk11_qmu_dbg_level >= level;
+}
+
 #define QMU_ERR(format, args...) do {if (mtk11_dbg_level(LOG_ERR)) \
 	pr_warn("QMU_ERR,<%s %d>, " format , __func__, __LINE__ , ## args);  } \
 	while (0)
@@ -281,8 +286,8 @@ u8 PDU_calcCksum(u8 *data, int len);
 
 #define TGPD_SET_FLAG(_pd, _flag)   (((TGPD *)_pd)->flag = (((TGPD *)_pd)->flag&(~TGPD_FLAGS_HWO))|(_flag))
 #define TGPD_GET_FLAG(_pd)             (((TGPD *)_pd)->flag & TGPD_FLAGS_HWO)
-#define TGPD_SET_CHKSUM(_pd, _n)    (((TGPD *)_pd)->chksum = PDU_calcCksum((u8 *)_pd, _n))
-#define TGPD_SET_CHKSUM_HWO(_pd, _n)    (((TGPD *)_pd)->chksum = PDU_calcCksum((u8 *)_pd, _n)-1)
+#define TGPD_SET_CHKSUM(_pd, _n)    (((TGPD *)_pd)->chksum = mtk11_PDU_calcCksum((u8 *)_pd, _n))
+#define TGPD_SET_CHKSUM_HWO(_pd, _n)    (((TGPD *)_pd)->chksum = mtk11_PDU_calcCksum((u8 *)_pd, _n)-1)
 #define TGPD_GET_CHKSUM(_pd)        (((TGPD *)_pd)->chksum)
 #define TGPD_SET_FORMAT(_pd, _fmt)  (((TGPD *)_pd)->flag = (((TGPD *)_pd)->flag&(~TGPD_FORMAT_BDP))|(_fmt))
 #define TGPD_GET_FORMAT(_pd)        (((((TGPD *)_pd)->flag & TGPD_FORMAT_BDP)>>1))

@@ -353,6 +353,12 @@ static int mtk_cooler_bcct_register_ltf(void)
 
 	chrlmt_register(&cl_bcct_chrlmt_handle);
 
+#if (MAX_NUM_INSTANCE_MTK_COOLER_BCCT == 3)
+	MTK_CL_BCCT_SET_LIMIT(1000, cl_bcct_state[0]);
+	MTK_CL_BCCT_SET_LIMIT(500, cl_bcct_state[1]);
+	MTK_CL_BCCT_SET_LIMIT(0, cl_bcct_state[2]);
+#endif
+
 	for (i = MAX_NUM_INSTANCE_MTK_COOLER_BCCT; i-- > 0;) {
 		char temp[20] = { 0 };
 
@@ -972,16 +978,16 @@ static int bcct_lcmoff_fb_notifier_callback(struct notifier_block *self, unsigne
 	struct fb_event *evdata = data;
 	int blank;
 
+	/* skip if it's not a blank event */
+	if ((event != FB_EVENT_BLANK) || (data == NULL))
+		return 0;
+
 	/* skip if policy is not enable */
 	if (!chrlmt_lcmoff_policy_enable)
 		return 0;
 
 	blank = *(int *)evdata->data;
 	mtk_cooler_bcct_dprintk("%s: blank = %d, event = %lu\n", __func__, blank, event);
-
-	/* skip if it's not a blank event */
-	if (event != FB_EVENT_BLANK)
-		return 0;
 
 	switch (blank) {
 	/* LCM ON */

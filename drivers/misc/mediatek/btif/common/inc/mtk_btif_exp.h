@@ -16,7 +16,11 @@
 
 /*--------------marco defination---------------*/
 #define BTIF_MAX_LEN_PER_PKT 2048
+#ifdef CONFIG_MTK_BTIF
 #define BTIF_RXD_BE_BLOCKED_DETECT 1
+#else
+#define BTIF_RXD_BE_BLOCKED_DETECT 0
+#endif
 /*--------------Enum Defination---------------*/
 typedef enum _ENUM_BTIF_DPIDLE_ {
 	BTIF_DPIDLE_DISABLE = 0,
@@ -38,6 +42,7 @@ typedef enum _ENUM_BTIF_DBG_ID_ {
 	BTIF_DUMP_BTIF_REG = BTIF_CLR_LOG + 1,
 	BTIF_ENABLE_RT_LOG = BTIF_DUMP_BTIF_REG + 1,
 	BTIF_DISABLE_RT_LOG = BTIF_ENABLE_RT_LOG + 1,
+	BTIF_DUMP_BTIF_IRQ = BTIF_DISABLE_RT_LOG + 1,
 	BTIF_DBG_MAX,
 } ENUM_BTIF_DBG_ID;
 
@@ -259,6 +264,46 @@ int mtk_wcn_btif_dbg_ctrl(unsigned long u_id, ENUM_BTIF_DBG_ID flag);
 *****************************************************************************/
 bool mtk_wcn_btif_parser_wmt_evt(unsigned long u_id,
 	const char *sub_str, unsigned int str_len);
+
+/*****************************************************************************
+ * FUNCTION
+ *  mtk_btif_exp_rx_has_pending_data
+ * DESCRIPTION
+ *  Check if rx buffer and rx vff have pending data
+ * PARAMETERS
+ *  u_id      [IN] btif index
+ * RETURNS
+ *  positive means has pending data
+ *  zeor means no pending data
+ *  negative means fail
+ *****************************************************************************/
+int mtk_btif_exp_rx_has_pending_data(unsigned long u_id);
+
+/*****************************************************************************
+ * FUNCTION
+ *  mtk_btif_exp_tx_has_pending_data
+ * DESCRIPTION
+ *  Check if tx vff has pending data
+ * PARAMETERS
+ *  u_id      [IN] btif index
+ * RETURNS
+ *  positive means has pending data
+ *  zeor means no pending data
+ *  negative means fail
+ *****************************************************************************/
+int mtk_btif_exp_tx_has_pending_data(unsigned long u_id);
+
+/*****************************************************************************
+ * FUNCTION
+ *  mtk_btif_exp_rx_thread_get
+ * DESCRIPTION
+ *  get btif_rxd thread
+ * PARAMETERS
+ *  u_id      [IN] btif index
+ * RETURNS
+ *  btif_rxd thread task pointer, NULL means fail
+ *****************************************************************************/
+struct task_struct *mtk_btif_exp_rx_thread_get(unsigned long u_id);
 
 int mtk_btif_exp_open_test(void);
 int mtk_btif_exp_close_test(void);

@@ -44,6 +44,7 @@
 #include "ddp_drv.h"
 #include "ddp_wdma.h"
 #include "ddp_hal.h"
+#include "ddp_color.h"
 #include "ddp_aal.h"
 #include "ddp_pwm.h"
 #include "ddp_dither.h"
@@ -351,6 +352,19 @@ void ddp_process_dbg_opt(const char *opt)
 				return;
 		}
 		sprintf(buf, "aal_dbg_en = 0x%x\n", aal_dbg_en);
+	}  else if (strncmp(opt, "color_dbg:", 10) == 0) {
+		char *p = (char *)opt + 10;
+		unsigned int debug_level;
+
+		ret = kstrtouint(p, 0, &debug_level);
+		if (ret) {
+			snprintf(buf, 50, "error to parse cmd %s\n", opt);
+			return;
+		}
+
+		disp_color_dbg_log_level(debug_level);
+
+		sprintf(buf, "color_dbg_en = 0x%x\n", debug_level);
 	} else if (0 == strncmp(opt, "aal_test:", 9)) {
 		aal_test(opt + 9, buf);
 	} else if (0 == strncmp(opt, "pwm_test:", 9)) {
@@ -912,9 +926,11 @@ static ssize_t lp_cust_write(struct file *file, const char __user *ubuf, size_t 
 	if (copy_from_user(&cmd_buf, ubuf, count))
 		return -EFAULT;
 
-	cmd_buf[count] = 0;
-
-	lp_cust_process_dbg_cmd(cmd_buf);
+	cmd_buf[count] = '\0';
+	if (strlen(cmd_buf))
+		lp_cust_process_dbg_cmd(cmd_buf);
+	else
+		return -EFAULT;
 
 	return ret;
 }

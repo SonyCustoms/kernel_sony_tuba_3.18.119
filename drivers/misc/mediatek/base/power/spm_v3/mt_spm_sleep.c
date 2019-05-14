@@ -1103,12 +1103,10 @@ wake_reason_t spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 #endif
 
 #ifndef CONFIG_MTK_FPGA
-#ifndef CONFIG_MTK_TINYSYS_SSPM_SUPPORT
 	if (dyna_load_pcm[DYNA_LOAD_PCM_SUSPEND].ready)
 		pcmdesc = &(dyna_load_pcm[DYNA_LOAD_PCM_SUSPEND].desc);
 	else
 		BUG();
-#endif /* CONFIG_MTK_TINYSYS_SSPM_SUPPORT */
 #else
 	pcmdesc = __spm_suspend.pcmdesc;
 #endif
@@ -1358,6 +1356,9 @@ uint32_t get_suspend_debug_regs(uint32_t index)
 	switch (index) {
 	case 0:
 		value = 5;
+#if defined(CONFIG_MACH_MT6797)
+		value = 0;
+#endif
 		spm_crit("SPM Suspend debug regs count = 0x%.8x\n",  value);
 	break;
 	case 1:

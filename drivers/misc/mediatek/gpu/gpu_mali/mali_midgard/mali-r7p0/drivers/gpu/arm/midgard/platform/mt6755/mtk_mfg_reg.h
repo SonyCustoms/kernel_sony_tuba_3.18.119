@@ -25,3 +25,4 @@
 #define MFG_DEBUG_STAT_REG(value)	((value) + MFG_DEBUG_A)
 
 #endif /* __MTK_MFG_REG_H__ */
+

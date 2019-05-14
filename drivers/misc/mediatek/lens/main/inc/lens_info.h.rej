@@ -1,0 +1,17 @@
+--- drivers/misc/mediatek/lens/main/inc/lens_info.h
++++ drivers/misc/mediatek/lens/main/inc/lens_info.h
+@@ -29,12 +29,14 @@
+ #define AFDRV_AK7345AF "AK7345AF"
+ #define AFDRV_AK7371AF "AK7371AF"
+ #define AFDRV_BU63165AF "BU63165AF"
++#define AFDRV_BU63169AF "BU63169AF"
+ #define AFDRV_BU6424AF "BU6424AF"
+ #define AFDRV_BU6429AF "BU6429AF"
+ #define AFDRV_BU64745GWZAF "BU64745GWZAF"
+ #define AFDRV_DW9714A "DW9714A"
+ #define AFDRV_DW9714AF "DW9714AF"
+ #define AFDRV_DW9718AF "DW9718AF"
++#define AFDRV_DW9718SAF "DW9718SAF"
+ #define AFDRV_DW9719TAF "DW9719TAF"
+ #define AFDRV_DW9814AF "DW9814AF"
+ #define AFDRV_FM50AF "FM50AF"

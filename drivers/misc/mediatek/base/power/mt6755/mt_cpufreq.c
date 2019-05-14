@@ -423,7 +423,7 @@ static unsigned int _mt_cpufreq_get_cpu_level(void)
 	}
 
 #endif
-
+#endif
 	return lv;
 }
 #else
@@ -1115,12 +1115,18 @@ unsigned int mt_cpufreq_get_leakage_mw(enum mt_cpu_dvfs_id id)
 #ifdef CONFIG_THERMAL
 	int temp;
 
+	if (!p)
+		return 0;
+
 	if (cpu_dvfs_is(p, MT_CPU_DVFS_LITTLE))
 		temp = tscpu_get_temp_by_bank(THERMAL_BANK0) / 1000;
 	else
 		temp = tscpu_get_temp_by_bank(THERMAL_BANK2) / 1000;
 #else
 	int temp = 40;
+
+	if (!p)
+		return 0;
 #endif
 	/* if (cpu_dvfs_is(p, MT_CPU_DVFS_LITTLE))
 		return mt_spower_get_leakage(MT_SPOWER_CPU, p->ops->get_cur_volt(p) / 100, temp);
@@ -1797,7 +1803,7 @@ static void set_cur_freq(struct mt_cpu_dvfs *p, unsigned int cur_khz, unsigned i
 static void set_cur_freq_hybrid(struct mt_cpu_dvfs *p, unsigned int cur_khz, unsigned int target_khz)
 {
 	int r, index;
-	unsigned int cluster, volt, volt_val;
+	unsigned int cluster, volt, volt_val = 0;
 
 	BUG_ON(!enable_cpuhvfs);
 
@@ -2686,6 +2692,8 @@ static int __cpuinit _mt_cpufreq_cpu_CB(struct notifier_block *nfb, unsigned lon
 	arch_get_cluster_cpus(&dvfs_cpumask, cluster_id);
 	cpumask_and(&cpu_online_cpumask, &dvfs_cpumask, cpu_online_mask);
 	p = id_to_cpu_dvfs(cluster_id);
+	if (!p)
+		return NOTIFY_OK;
 
 	cpufreq_ver("@%s():%d, cpu = %d, action = %lu, oppidx = %d, num_online_cpus = %d\n"
 	, __func__, __LINE__, cpu, action, p->idx_opp_tbl, online_cpus);
@@ -4032,7 +4040,7 @@ static int cpufreq_oppidx_proc_show(struct seq_file *m, void *v)
 static ssize_t cpufreq_oppidx_proc_write(struct file *file, const char __user *buffer, size_t count, loff_t *pos)
 {
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
-	int oppidx;
+	int oppidx = 0;
 	int rc;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
@@ -4083,7 +4091,7 @@ static ssize_t cpufreq_freq_proc_write(struct file *file, const char __user *buf
 	unsigned long flags;
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
 	unsigned int cur_freq;
-	int freq, i, found;
+	int freq, i, found = 0;
 	int rc;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);

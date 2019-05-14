@@ -18,7 +18,6 @@
 #ifdef CONFIG_ZRAM_DEBUG
 #define DEBUG
 #endif
-
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/bio.h>
@@ -158,11 +157,6 @@ static struct zram_table_entry *search_node_in_zram_tree(struct zram_table_entry
 		pr_err("[zram][search_node_in_zram_tree] input_node is NULL\n");
 		return NULL;
 	}
-	if (current_node == NULL) {
-		*new_node = new;
-		*parent_node = NULL;
-		return NULL;
-	}
 
 	while (*new) {
 		current_node = rb_entry(*new, struct zram_table_entry, node);
@@ -264,14 +258,9 @@ static int remove_node_from_zram_list(struct zram *zram, struct zram_meta *meta,
 			pre_index = next_index;
 			while (current_index != index) {
 				i++;
-				if (i >= 4096 && (i%1000 == 0)) {
-					pr_err("[ZRAM]can't find meta->table[%u].size %lu chunksum %x\n"
-						, index, TABLE_GET_SIZE(meta->table[index].value)
-						, meta->table[index].checksum);
-					if (i > meta->table[index].copy_count) {
-						BUG_ON(1);
-						break;
-					}
+				if (i > meta->table[index].copy_count) {
+					BUG_ON(1);
+					break;
 				}
 				meta->table[current_index].copy_index = next_index;
 				pre_index = current_index;
@@ -282,22 +271,17 @@ static int remove_node_from_zram_list(struct zram *zram, struct zram_meta *meta,
 			zsm_clear_flag_index(meta, index, ZRAM_FIRST_NODE);
 			zsm_set_flag_index(meta, next_index, ZRAM_FIRST_NODE);
 		} else {
+			u32 tmp_index = 0;
+
 			current_index  = meta->table[index].copy_index;
 			pre_index = current_index;
 			current_index = meta->table[current_index].next_index;
 			while (index != current_index) {
 				i++;
-				if (i >= 4096 && (i%1000 == 0)) {
-					u32 tmp_index = 0;
-
-					pr_warn("[ZRAM]!!can't find2 meta->table[%u].size %lu chunksum %x\n"
-						, index, TABLE_GET_SIZE(meta->table[index].value),
-						meta->table[index].checksum);
-					tmp_index = meta->table[current_index].copy_index;
-					if (i > meta->table[tmp_index].copy_count) {
-						BUG_ON(1);
-						break;
-					}
+				tmp_index = meta->table[current_index].copy_index;
+				if (i > meta->table[tmp_index].copy_count) {
+					BUG_ON(1);
+					break;
 				}
 				pre_index = current_index;
 				current_index = meta->table[current_index].next_index;
@@ -765,7 +749,12 @@ static void zram_free_page(struct zram *zram, size_t index)
 			zram_clear_flag(meta, index, ZRAM_ZERO);
 			atomic64_dec(&zram->stats.zero_pages);
 		}
+#ifdef CONFIG_ZSM
+		if (!zsm_test_flag_index(meta, index, ZRAM_ZSM_NODE))
+			return;
+#else
 		return;
+#endif
 	}
 #ifdef CONFIG_ZSM
 	if (!zram_test_flag(meta, index, ZRAM_ZERO) && zsm_test_flag_index(meta, index, ZRAM_ZSM_NODE)) {
@@ -853,13 +842,13 @@ static int zram_decompress_page(struct zram *zram, char *mem, u32 index)
 
 	if (!handle || zram_test_flag(meta, index, ZRAM_ZERO)) {
 		bit_spin_unlock(ZRAM_ACCESS, &meta->table[index].value);
-		clear_page(mem);
+		memset(mem, 0, PAGE_SIZE);
 		return 0;
 	}
 
 	cmem = zs_map_object(meta->mem_pool, handle, ZS_MM_RO);
 	if (size == PAGE_SIZE)
-		copy_page(mem, cmem);
+		memcpy(mem, cmem, PAGE_SIZE);
 #ifndef CONFIG_MT_ENG_BUILD
 	else
 		ret = zcomp_decompress(zram->comp, cmem, size, mem);
@@ -1054,25 +1043,34 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 		{
 		int search_ret = 0;
 
-		bit_spin_lock(ZRAM_ACCESS, &meta->table[index].value);
-		zram_free_page(zram, index);
-		meta->table[index].checksum = checksum;
-		zram_set_obj_size(meta, index, clen);
-		meta->table[index].next_index = index;
-		meta->table[index].copy_index = index;
-		meta->table[index].copy_count = 0;
-		INIT_LIST_HEAD(&(meta->table[index].head));
-		bit_spin_unlock(ZRAM_ACCESS, &meta->table[index].value);
 		if ((clen == PAGE_SIZE) && !is_partial_io(bvec)) {
 			src = kmap_atomic(page);
+			bit_spin_lock(ZRAM_ACCESS, &meta->table[index].value);
+			zram_free_page(zram, index);
+			zram_set_obj_size(meta, index, clen);
 			spin_lock(&zram_node4k_mutex);
+			meta->table[index].checksum = checksum;
+			meta->table[index].next_index = index;
+			meta->table[index].copy_index = index;
+			meta->table[index].copy_count = 0;
+			INIT_LIST_HEAD(&(meta->table[index].head));
 			search_ret = insert_node_to_zram_tree(zram, meta, index, src, &root_zram_tree_4k, clen);
 			spin_unlock(&zram_node4k_mutex);
+			bit_spin_unlock(ZRAM_ACCESS, &meta->table[index].value);
 			kunmap_atomic(src);
 		} else {
+			bit_spin_lock(ZRAM_ACCESS, &meta->table[index].value);
+			zram_free_page(zram, index);
+			zram_set_obj_size(meta, index, clen);
 			spin_lock(&zram_node4k_mutex);
+			meta->table[index].checksum = checksum;
+			meta->table[index].next_index = index;
+			meta->table[index].copy_index = index;
+			meta->table[index].copy_count = 0;
+			INIT_LIST_HEAD(&(meta->table[index].head));
 			search_ret = insert_node_to_zram_tree(zram, meta, index, src, &root_zram_tree_4k, clen);
 			spin_unlock(&zram_node4k_mutex);
+			bit_spin_unlock(ZRAM_ACCESS, &meta->table[index].value);
 		}
 		if (search_ret) {
 			ret = 0;
@@ -1087,16 +1085,16 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 
 		bit_spin_lock(ZRAM_ACCESS, &meta->table[index].value);
 		zram_free_page(zram, index);
-		meta->table[index].checksum = checksum;
 		zram_set_obj_size(meta, index, clen);
+		spin_lock(&zram_node_mutex);
+		meta->table[index].checksum = checksum;
 		meta->table[index].next_index = index;
 		meta->table[index].copy_index = index;
 		meta->table[index].copy_count = 0;
 		INIT_LIST_HEAD(&(meta->table[index].head));
-		bit_spin_unlock(ZRAM_ACCESS, &meta->table[index].value);
-		spin_lock(&zram_node_mutex);
 		search_ret = insert_node_to_zram_tree(zram, meta, index, src, &root_zram_tree, clen);
 		spin_unlock(&zram_node_mutex);
+		bit_spin_unlock(ZRAM_ACCESS, &meta->table[index].value);
 		if (search_ret) {
 			ret = 0;
 			goto out;
@@ -1130,7 +1128,7 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 
 	if ((clen == PAGE_SIZE) && !is_partial_io(bvec)) {
 		src = kmap_atomic(page);
-		copy_page(cmem, src);
+		memcpy(cmem, src, PAGE_SIZE);
 		kunmap_atomic(src);
 	} else {
 #ifdef CONFIG_MT_ENG_BUILD
@@ -1167,7 +1165,9 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 	 * before overwriting unused sectors.
 	 */
 	bit_spin_lock(ZRAM_ACCESS, &meta->table[index].value);
+#ifndef CONFIG_ZSM
 	zram_free_page(zram, index);
+#endif
 	meta->table[index].handle = handle;
 	zram_set_obj_size(meta, index, clen);
 #ifdef CONFIG_ZSM

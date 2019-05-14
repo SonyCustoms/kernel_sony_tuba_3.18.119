@@ -89,7 +89,8 @@ do {\
 } while (0)
 
 #if (defined(CONFIG_MICROTRUST_TEE_SUPPORT))
-#define RPMB_DATA_BUFF_SIZE (1024 * 33)
+#define RPMB_DATA_BUFF_SIZE (1024 * 24)
+#define RPMB_ONE_FRAME_SIZE (512)
 static unsigned char *rpmb_buffer;
 #endif
 
@@ -1473,44 +1474,107 @@ static int emmc_rpmb_open(struct inode *inode, struct file *file)
 static long emmc_rpmb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	int err = 0;
-	struct mmc_card *card = mtk_msdc_host[0]->mmc->card;
+    struct mmc_card *card;
 	struct rpmb_ioc_param param;
 	int ret = 0;
+    unsigned char *u_key, *u_data, *u_hmac;
 #if (defined(CONFIG_MICROTRUST_TEE_SUPPORT))
 	struct rpmb_infor rpmbinfor;
 
 	memset(&rpmbinfor, 0, sizeof(struct rpmb_infor));
 #endif
 
-	/* MSG(INFO, "%s, !!!!!!!!!!!!\n", __func__);    */
+    /* MSG(INFO, "%s, !!!!!!!!!!!!\n", __func__);    */
+	if (!mtk_msdc_host[0] || !mtk_msdc_host[0]->mmc || !mtk_msdc_host[0]->mmc->card)
+		return -1;
+
+	card = mtk_msdc_host[0]->mmc->card;
 
 	err = copy_from_user(&param, (void *)arg, sizeof(param));
-	if (err < 0) {
+	if (err != 0) {
 		MSG(ERR, "%s, err=%x\n", __func__, err);
 		return -1;
+	}
+/* RPMB MAC is 32bytes, max data length isn't more than 8K bytes */
+	if (!param.key || !param.data || !param.hmac || param.hmac_len != 32
+		|| param.data_len > 8*1024)
+		return -1;
+
+	/* temp storage userspace pointer */
+	u_key = param.key;
+	u_data = param.data;
+	u_hmac = param.hmac;
+
+	param.key = kmalloc(32, GFP_KERNEL); /* RPMB key is 32bytes */
+	param.data = kmalloc(param.data_len, GFP_KERNEL);
+	param.hmac = kmalloc(param.hmac_len, GFP_KERNEL);
+
+	if (param.key) {
+		err = copy_from_user(param.key, u_key, 32);
+		if (err != 0) {
+			MSG(ERR, "%s, err=%x\n", __func__, err);
+			ret = -1;
+			goto end;
+		}
+	} else {
+		ret = -1;
+		goto end;
+	}
+
+	if (param.data) {
+		err = copy_from_user(param.data, u_data, param.data_len);
+		if (err != 0) {
+			MSG(ERR, "%s, err=%x\n", __func__, err);
+			ret = -1;
+			goto end;
+		}
+	} else {
+		ret = -1;
+		goto end;
+	}
+
+	if (param.hmac) {
+		err = copy_from_user(param.hmac, u_hmac, param.hmac_len);
+		if (err != 0) {
+			MSG(ERR, "%s, err=%x\n", __func__, err);
+			ret = -1;
+			goto end;
+		}
+	} else {
+		ret = -1;
+		goto end;
 	}
 
 #if (defined(CONFIG_MICROTRUST_TEE_SUPPORT))
 	if ((cmd == RPMB_IOCTL_SOTER_WRITE_DATA) || (cmd == RPMB_IOCTL_SOTER_READ_DATA)) {
 		if (rpmb_buffer == NULL) {
 			MSG(ERR, "%s, rpmb_buffer is NULL!\n", __func__);
-			return -1;
+			ret = -1;
+			goto end;
 		}
 		err = copy_from_user(rpmb_buffer, (void *)arg, 4);
-		if (err < 0) {
+		if (err != 0) {
 			MSG(ERR, "%s, err=%x\n", __func__, err);
-			return -1;
+			ret = -1;
+			goto end;
 		}
 		rpmbinfor.size =  *(unsigned char *)rpmb_buffer | (*((unsigned char *)rpmb_buffer + 1) << 8);
 		rpmbinfor.size |= (*((unsigned char *)rpmb_buffer+2) << 16) | (*((unsigned char *)rpmb_buffer+3) << 24);
 		MSG(INFO, "%s, rpmbinfor.size is %d!\n", __func__, rpmbinfor.size);
 		err = copy_from_user(rpmb_buffer, (void *)arg, 4 + rpmbinfor.size);
-		if (err < 0) {
+		if (err != 0) {
 			MSG(ERR, "%s, err=%x\n", __func__, err);
-			return -1;
+			ret = -1;
+			goto end;
 		}
 		rpmbinfor.data_frame = (rpmb_buffer + 4);
-	}
+ 		} else {
+			MSG(ERR, "%s, rpmbinfor.size(%d+4) is overflow (%d)!\n",
+					__func__, rpmbinfor.size, RPMB_DATA_BUFF_SIZE);
+			ret = -1;
+			goto end;
+ 		}
+ 	}
 #endif
 
 	switch (cmd) {
@@ -1530,9 +1594,10 @@ static long emmc_rpmb_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		ret = emmc_rpmb_req_read_data(card, &param);
 
 		err = copy_to_user((void *)arg, &param, sizeof(param));
-		if (err < 0) {
+		if (err != 0) {
 			MSG(ERR, "%s, err=%x\n", __func__, err);
-			return -1;
+			ret += -1;
+			goto end;
 		}
 
 		break;
@@ -1548,7 +1613,9 @@ static long emmc_rpmb_ioctl(struct file *file, unsigned int cmd, unsigned long a
 #if (defined(CONFIG_MICROTRUST_TEE_SUPPORT))
 	case RPMB_IOCTL_SOTER_WRITE_DATA:
 
-		ret = ut_rpmb_req_write_data(card, (struct s_rpmb *)(rpmbinfor.data_frame), rpmbinfor.size/1024);
+			ret = ut_rpmb_req_write_data(card,
+					(struct s_rpmb *)(rpmbinfor.data_frame),
+					rpmbinfor.size / RPMB_ONE_FRAME_SIZE);
 
 		if (ret) {
 			MSG(ERR, "%s, emmc_rpmb_req_handle IO error!!!(%x)\n", __func__, ret);
@@ -1556,12 +1623,18 @@ static long emmc_rpmb_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		}
 
 		ret = copy_to_user((void *)arg, rpmb_buffer, 4 + rpmbinfor.size);
+		if (ret != 0) {
+			MSG(ERR, "%s, err=%x\n", __func__, ret);
+			goto end;
+		}
 
 	    break;
 
 	case RPMB_IOCTL_SOTER_READ_DATA:
 
-		ret = ut_rpmb_req_read_data(card, (struct s_rpmb *)(rpmbinfor.data_frame), rpmbinfor.size/1024);
+			ret = ut_rpmb_req_read_data(card,
+					(struct s_rpmb *)(rpmbinfor.data_frame),
+					rpmbinfor.size / RPMB_ONE_FRAME_SIZE);
 
 		if (ret) {
 			MSG(ERR, "%s, emmc_rpmb_req_handle IO error!!!(%x)\n", __func__, ret);
@@ -1569,6 +1642,10 @@ static long emmc_rpmb_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		}
 
 		ret = copy_to_user((void *)arg, rpmb_buffer, 4 + rpmbinfor.size);
+		if (ret != 0) {
+			MSG(ERR, "%s, err=%x\n", __func__, ret);
+			goto end;
+		}
 
 	    break;
 
@@ -1586,11 +1663,14 @@ static long emmc_rpmb_ioctl(struct file *file, unsigned int cmd, unsigned long a
 #endif
 	default:
 		MSG(ERR, "%s, wrong ioctl code (%d)!!!\n", __func__, cmd);
-		return -ENOTTY;
+		ret = -1;
 	}
-#if (defined(CONFIG_MICROTRUST_TEE_SUPPORT))
+
 end:
-#endif
+	kfree(param.key);
+	kfree(param.data);
+	kfree(param.hmac);
+
 	return ret;
 }
 

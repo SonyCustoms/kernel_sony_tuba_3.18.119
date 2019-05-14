@@ -18,7 +18,13 @@
 #include <linux/sched.h>
 #include <linux/cputime.h>
 
+#define CPUFREQ_STATS_RESET 1
+
 static spinlock_t cpufreq_stats_lock;
+
+#if CPUFREQ_STATS_RESET
+static bool isCpufreqStatExit;
+#endif
 
 struct cpufreq_stats {
 	unsigned int cpu;
@@ -27,6 +33,9 @@ struct cpufreq_stats {
 	unsigned int max_state;
 	unsigned int state_num;
 	unsigned int last_index;
+#if CPUFREQ_STATS_RESET
+	unsigned int alloc_size;
+#endif
 	u64 *time_in_state;
 	unsigned int *freq_table;
 #ifdef CONFIG_CPU_FREQ_STAT_DETAILS
@@ -176,6 +185,7 @@ static ssize_t show_all_time_in_state(struct kobject *kobj,
 	struct all_cpufreq_stats *all_stat;
 	struct cpufreq_policy *policy;
 
+	get_online_cpus();
 	len += scnprintf(buf + len, PAGE_SIZE - len, "freq\t\t");
 	for_each_possible_cpu(cpu) {
 		len += scnprintf(buf + len, PAGE_SIZE - len, "cpu%d\t\t", cpu);
@@ -208,6 +218,7 @@ static ssize_t show_all_time_in_state(struct kobject *kobj,
 
 out:
 	len += scnprintf(buf + len, PAGE_SIZE - len, "\n");
+	put_online_cpus();
 	return len;
 }
 
@@ -298,10 +309,22 @@ static void __cpufreq_stats_free_table(struct cpufreq_policy *policy)
 
 	pr_debug("%s: Free stat table\n", __func__);
 
+#if CPUFREQ_STATS_RESET
+	if (!isCpufreqStatExit) {
+		memset(stat->time_in_state, 0, stat->alloc_size);
+		stat->total_trans = 0;
+	} else {
+		sysfs_remove_group(&policy->kobj, &stats_attr_group);
+		kfree(stat->time_in_state);
+		kfree(stat);
+		per_cpu(cpufreq_stats_table, policy->cpu) = NULL;
+	}
+#else
 	sysfs_remove_group(&policy->kobj, &stats_attr_group);
 	kfree(stat->time_in_state);
 	kfree(stat);
 	per_cpu(cpufreq_stats_table, policy->cpu) = NULL;
+#endif
 }
 
 static void cpufreq_stats_free_table(unsigned int cpu)
@@ -367,8 +390,18 @@ static int __cpufreq_stats_create_table(struct cpufreq_policy *policy,
 	unsigned int cpu = policy->cpu;
 	struct cpufreq_frequency_table *pos;
 
+#if CPUFREQ_STATS_RESET
+	stat = per_cpu(cpufreq_stats_table, cpu);
+	if (stat) {
+		/* re-alloc to adapte different count */
+		kfree(stat->time_in_state);
+		goto reinit;
+	}
+#else
 	if (per_cpu(cpufreq_stats_table, cpu))
 		return -EBUSY;
+#endif
+
 	stat = kzalloc(sizeof(*stat), GFP_KERNEL);
 	if ((stat) == NULL)
 		return -ENOMEM;
@@ -380,10 +413,15 @@ static int __cpufreq_stats_create_table(struct cpufreq_policy *policy,
 	stat->cpu = cpu;
 	per_cpu(cpufreq_stats_table, cpu) = stat;
 
+#if CPUFREQ_STATS_RESET
+reinit:
+#endif
 	alloc_size = count * sizeof(int) + count * sizeof(u64);
-
 #ifdef CONFIG_CPU_FREQ_STAT_DETAILS
 	alloc_size += count * count * sizeof(int);
+#endif
+#if CPUFREQ_STATS_RESET
+	stat->alloc_size = alloc_size;
 #endif
 	stat->max_state = count;
 	stat->time_in_state = kzalloc(alloc_size, GFP_KERNEL);
@@ -605,6 +643,9 @@ static int cpufreq_stat_notifier_policy(struct notifier_block *nb,
 	struct cpufreq_frequency_table *table, *pos;
 	unsigned int cpu_num, cpu = policy->cpu;
 
+	if (val == CPUFREQ_REMOVE_POLICY)
+		__cpufreq_stats_free_table(policy);
+
 	if (val == CPUFREQ_UPDATE_POLICY_CPU) {
 		cpufreq_stats_update_policy_cpu(policy);
 		return 0;
@@ -627,8 +668,8 @@ static int cpufreq_stat_notifier_policy(struct notifier_block *nb,
 
 	if (val == CPUFREQ_CREATE_POLICY)
 		ret = __cpufreq_stats_create_table(policy, table, count);
-	else if (val == CPUFREQ_REMOVE_POLICY)
-		__cpufreq_stats_free_table(policy);
+	/*else if (val == CPUFREQ_REMOVE_POLICY)
+		__cpufreq_stats_free_table(policy);*/
 
 	return ret;
 }
@@ -688,6 +729,10 @@ static int __init cpufreq_stats_init(void)
 	if (ret)
 		return ret;
 
+#if CPUFREQ_STATS_RESET
+	isCpufreqStatExit = false;
+#endif
+
 	for_each_online_cpu(cpu)
 		cpufreq_stats_create_table(cpu);
 
@@ -696,8 +741,14 @@ static int __init cpufreq_stats_init(void)
 	if (ret) {
 		cpufreq_unregister_notifier(&notifier_policy_block,
 				CPUFREQ_POLICY_NOTIFIER);
+#if CPUFREQ_STATS_RESET
+		isCpufreqStatExit = true;
+#endif
 		for_each_online_cpu(cpu)
 			cpufreq_stats_free_table(cpu);
+#if CPUFREQ_STATS_RESET
+		isCpufreqStatExit = false;
+#endif
 		return ret;
 	}
 
@@ -723,8 +774,14 @@ static void __exit cpufreq_stats_exit(void)
 			CPUFREQ_POLICY_NOTIFIER);
 	cpufreq_unregister_notifier(&notifier_trans_block,
 			CPUFREQ_TRANSITION_NOTIFIER);
+#if CPUFREQ_STATS_RESET
+	isCpufreqStatExit = true;
+#endif
 	for_each_online_cpu(cpu)
 		cpufreq_stats_free_table(cpu);
+#if CPUFREQ_STATS_RESET
+	isCpufreqStatExit = false;
+#endif
 	cpufreq_allstats_free();
 	cpufreq_powerstats_free();
 	cpufreq_put_global_kobject();

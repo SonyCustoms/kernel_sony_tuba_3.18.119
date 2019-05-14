@@ -340,7 +340,7 @@ void mmc_cmd_dump(struct mmc_host *mmc)
 	for (i = dbg_host_cnt; i < dbg_max_cnt; i++) {
 		if (dbg_run_host_log_dat[i].cmd == 44
 			&& (dbg_run_host_log_dat[i].type == 0)) {
-			tag = (dbg_run_host_log_dat[i].arg >> 16) & 0xf;
+			tag = (dbg_run_host_log_dat[i].arg >> 16) & 0x1f;
 			pr_err("%d [%5llu.%06llu]%2d %2d 0x%08x tag=%d type=%s %s %s\n", i,
 				dbg_run_host_log_dat[i].time_sec,
 				dbg_run_host_log_dat[i].time_usec,
@@ -356,7 +356,7 @@ void mmc_cmd_dump(struct mmc_host *mmc)
 		} else if ((dbg_run_host_log_dat[i].cmd == 46
 			|| dbg_run_host_log_dat[i].cmd == 47)
 			&& !dbg_run_host_log_dat[i].type) {
-			tag = (dbg_run_host_log_dat[i].arg >> 16) & 0xf;
+			tag = (dbg_run_host_log_dat[i].arg >> 16) & 0x1f;
 			pr_err("%d [%5llu.%06llu]%2d %2d 0x%08x tag=%d\n", i,
 				dbg_run_host_log_dat[i].time_sec,
 				dbg_run_host_log_dat[i].time_usec,
@@ -375,7 +375,7 @@ void mmc_cmd_dump(struct mmc_host *mmc)
 	for (i = 0; i < dbg_host_cnt; i++) {
 		if (dbg_run_host_log_dat[i].cmd == 44
 			&& !dbg_run_host_log_dat[i].type) {
-			tag = (dbg_run_host_log_dat[i].arg >> 16) & 0xf;
+			tag = (dbg_run_host_log_dat[i].arg >> 16) & 0x1f;
 			pr_err("%d [%5llu.%06llu]%2d %2d 0x%08x tag=%d type=%s %s %s\n", i,
 				dbg_run_host_log_dat[i].time_sec,
 				dbg_run_host_log_dat[i].time_usec,
@@ -391,7 +391,7 @@ void mmc_cmd_dump(struct mmc_host *mmc)
 		} else if ((dbg_run_host_log_dat[i].cmd == 46
 			|| dbg_run_host_log_dat[i].cmd == 47)
 			&& !dbg_run_host_log_dat[i].type) {
-			tag = (dbg_run_host_log_dat[i].arg >> 16) & 0xf;
+			tag = (dbg_run_host_log_dat[i].arg >> 16) & 0x1f;
 			pr_err("%d [%5llu.%06llu]%2d %2d 0x%08x tag=%d\n", i,
 				dbg_run_host_log_dat[i].time_sec,
 				dbg_run_host_log_dat[i].time_usec,
@@ -2111,15 +2111,14 @@ static ssize_t msdc_debug_proc_write(struct file *file, const char *buf,
 		pr_err("[SD_Debug]smt=%d\n", p2);
 	} else if (cmd == RW_BIT_BY_BIT_COMPARE) {
 		id = p1;
+		if (p2 <= 0) {
+			pr_err("[SD_Debug]: bad compare count: %d\n",
+				p2);
+			return count;
+		}
 		compare_count = p2;
 		if (id >= HOST_MAX_NUM || id < 0)
 			goto invalid_host_id;
-		if (compare_count < 0) {
-			pr_err("[SD_Debug]: bad compare count: %d\n",
-				compare_count);
-			return count;
-		}
-
 		if (id == 0) { /* for msdc0 */
 #ifdef CONFIG_MTK_EMMC_SUPPORT
 			multi_rw_compare(0, COMPARE_ADDRESS_MMC,
@@ -2274,17 +2273,21 @@ static ssize_t msdc_debug_proc_write(struct file *file, const char *buf,
 			sdio_pro_enable = 0;
 		}
 	} else if (cmd == SMP_TEST_ON_ONE_HOST) {
-		id = p1;
-		thread_num = p2;
-		compare_count = p3;
-		multi_address = p4;
-		smp_test_on_hosts(thread_num, id, compare_count, multi_address);
+		if (p2 > 0) {
+			id = p1;
+			thread_num = p2;
+			compare_count = p3;
+			multi_address = p4;
+			smp_test_on_hosts(thread_num, id, compare_count, multi_address);
+		}
 	} else if (cmd == SMP_TEST_ON_ALL_HOST) {
-		thread_num = p1;
-		compare_count = p2;
-		multi_address = p3;
-		smp_test_on_hosts(thread_num, HOST_MAX_NUM, compare_count,
-			multi_address);
+		if (p1 > 0) {
+			thread_num = p1;
+			compare_count = p2;
+			multi_address = p3;
+			smp_test_on_hosts(thread_num, HOST_MAX_NUM, compare_count,
+				multi_address);
+		}
 	} else if (cmd == MMC_REGISTER_READ) {
 		pr_err("p1 = 0x%x\n", p1);
 		pr_err("regiser: 0x%x = 0x%x\n", p1, MSDC_READ32((ulong) p1));

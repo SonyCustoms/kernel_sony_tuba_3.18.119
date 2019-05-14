@@ -10,7 +10,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
-
 #ifdef CONFIG_COMPAT
 
 #include <linux/fs.h>
@@ -34,6 +33,8 @@
 #include <linux/errno.h>
 #include <linux/time.h>
 #include "kd_flashlight.h"
+#include "kd_flashlight_type.h"
+
 #include <asm/io.h>
 #include <asm/uaccess.h>
 #include "kd_camera_typedef.h"
@@ -522,7 +523,7 @@ MUINT32 constantFlashlightInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc)
 		*pfFunc = &constantFlashlightFunc;
 	return 0;
 }
-
+EXPORT_SYMBOL(constantFlashlightInit);
 
 
 /* LED flash control for high current capture mode*/

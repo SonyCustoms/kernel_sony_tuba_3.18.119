@@ -100,3 +100,5 @@ unsigned long long mtprof_get_cpu_iowait(int cpu);
 void start_record_task(void);
 void stop_record_task(void);
 void reset_record_task(void);
+
+void mt_sched_monitor_test_init(void);

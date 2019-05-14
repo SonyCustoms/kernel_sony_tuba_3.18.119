@@ -70,26 +70,53 @@
 #define WAKE_SRC_FOR_SODI WAKE_SRC_EINT	/* WAKE_SRC_GPT | WAKE_SRC_EINT */
 #else
 #if defined(CONFIG_ARCH_MT6735)
+#if defined(CONFIG_MICROTRUST_TEE_SUPPORT)
+#define WAKE_SRC_FOR_SODI \
+	(WAKE_SRC_KP | WAKE_SRC_GPT | WAKE_SRC_EINT | WAKE_SRC_CONN_WDT | \
+	WAKE_SRC_CCIF0_MD | WAKE_SRC_CCIF1_MD | WAKE_SRC_CONN2AP | \
+	WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN | WAKE_SRC_AFE | \
+	WAKE_SRC_CIRQ | WAKE_SRC_MD1_VRF18_WAKE | WAKE_SRC_SYSPWREQ | \
+	WAKE_SRC_MD_WDT | WAKE_SRC_C2K_WDT | WAKE_SRC_CLDMA_MD)
+#else
 #define WAKE_SRC_FOR_SODI \
 	(WAKE_SRC_KP | WAKE_SRC_GPT | WAKE_SRC_EINT | WAKE_SRC_CONN_WDT | \
 	WAKE_SRC_CCIF0_MD | WAKE_SRC_CCIF1_MD | WAKE_SRC_CONN2AP | \
 	WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN | WAKE_SRC_SEJ | WAKE_SRC_AFE | \
 	WAKE_SRC_CIRQ | WAKE_SRC_MD1_VRF18_WAKE | WAKE_SRC_SYSPWREQ | \
 	WAKE_SRC_MD_WDT | WAKE_SRC_C2K_WDT | WAKE_SRC_CLDMA_MD)
+#endif
 #elif defined(CONFIG_ARCH_MT6735M)
+#if defined(CONFIG_MICROTRUST_TEE_SUPPORT)
+#define WAKE_SRC_FOR_SODI \
+	(WAKE_SRC_KP | WAKE_SRC_GPT | WAKE_SRC_EINT | WAKE_SRC_CONN_WDT | \
+	WAKE_SRC_CCIF0_MD | WAKE_SRC_CCIF1_MD | WAKE_SRC_CONN2AP | \
+	WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN | WAKE_SRC_AFE | \
+	WAKE_SRC_CIRQ | WAKE_SRC_MD1_VRF18_WAKE | WAKE_SRC_SYSPWREQ | \
+	WAKE_SRC_MD_WDT | WAKE_SRC_CLDMA_MD)
+#else
 #define WAKE_SRC_FOR_SODI \
 	(WAKE_SRC_KP | WAKE_SRC_GPT | WAKE_SRC_EINT | WAKE_SRC_CONN_WDT | \
 	WAKE_SRC_CCIF0_MD | WAKE_SRC_CCIF1_MD | WAKE_SRC_CONN2AP | \
 	WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN | WAKE_SRC_SEJ | WAKE_SRC_AFE | \
 	WAKE_SRC_CIRQ | WAKE_SRC_MD1_VRF18_WAKE | WAKE_SRC_SYSPWREQ | \
 	WAKE_SRC_MD_WDT | WAKE_SRC_CLDMA_MD)
+#endif
 #elif defined(CONFIG_ARCH_MT6753)
+#if defined(CONFIG_MICROTRUST_TEE_SUPPORT)
+#define WAKE_SRC_FOR_SODI \
+	(WAKE_SRC_KP | WAKE_SRC_GPT | WAKE_SRC_EINT | WAKE_SRC_CONN_WDT | \
+	WAKE_SRC_CCIF0_MD | WAKE_SRC_CCIF1_MD | WAKE_SRC_CONN2AP | \
+	WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN | WAKE_SRC_AFE | \
+	WAKE_SRC_CIRQ | WAKE_SRC_MD1_VRF18_WAKE | WAKE_SRC_SYSPWREQ | \
+	WAKE_SRC_MD_WDT | WAKE_SRC_C2K_WDT | WAKE_SRC_CLDMA_MD)
+#else
 #define WAKE_SRC_FOR_SODI \
 	(WAKE_SRC_KP | WAKE_SRC_GPT | WAKE_SRC_EINT | WAKE_SRC_CONN_WDT | \
 	WAKE_SRC_CCIF0_MD | WAKE_SRC_CCIF1_MD | WAKE_SRC_CONN2AP | \
 	WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN | WAKE_SRC_SEJ | WAKE_SRC_AFE | \
 	WAKE_SRC_CIRQ | WAKE_SRC_MD1_VRF18_WAKE | WAKE_SRC_SYSPWREQ | \
 	WAKE_SRC_MD_WDT | WAKE_SRC_C2K_WDT | WAKE_SRC_CLDMA_MD)
+#endif
 #elif defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
 #define WAKE_SRC_FOR_SODI \
 	(WAKE_SRC_KP | WAKE_SRC_GPT | WAKE_SRC_EINT | WAKE_SRC_WDT | \
@@ -748,8 +775,6 @@ static struct pcm_desc sodi_pcm = {
 	.vec0		= EVENT_VEC(30, 1, 0, 0),	/* FUNC_APSRC_WAKEUP */
 	.vec1		= EVENT_VEC(31, 1, 0, 105),	/* FUNC_APSRC_SLEEP */
 };
-#else
-#error "Does not support!"
 #endif
 
 static struct pwr_ctrl sodi_ctrl = {
@@ -808,7 +833,9 @@ static struct pwr_ctrl sodi_ctrl = {
 };
 
 struct spm_lp_scen __spm_sodi = {
+#if defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
 	.pcmdesc = &sodi_pcm,
+#endif
 	.pwrctrl = &sodi_ctrl,
 };
 
@@ -816,6 +843,9 @@ struct spm_lp_scen __spm_sodi = {
 static bool gSpm_SODI_mempll_pwr_mode = 1;
 
 static bool gSpm_sodi_en;
+
+static int sodi_forbid_flag = -1;
+static unsigned long int sodi_forbid_time_ms;
 
 #if REDUCE_SODI_LOG
 static unsigned long int sodi_logout_prev_time;
@@ -935,7 +965,6 @@ void __attribute__ ((weak)) mt_cirq_disable(void)
 {
 }
 
-#if REDUCE_SODI_LOG
 static long int idle_get_current_time_ms(void)
 {
 	struct timeval t;
@@ -943,8 +972,6 @@ static long int idle_get_current_time_ms(void)
 	do_gettimeofday(&t);
 	return ((t.tv_sec & 0xFFF) * 1000000 + t.tv_usec) / 1000;
 }
-#endif
-
 
 static void spm_trigger_wfi_for_sodi(struct pwr_ctrl *pwrctrl)
 {
@@ -984,7 +1011,7 @@ void spm_go_to_sodi(u32 spm_flags, u32 spm_data)
 	unsigned long flags;
 	struct mtk_irq_mask mask;
 	wake_reason_t wr = WR_NONE;
-	struct pcm_desc *pcmdesc = __spm_sodi.pcmdesc;
+	struct pcm_desc *pcmdesc;
 	struct pwr_ctrl *pwrctrl = __spm_sodi.pwrctrl;
 	int vcore_status = 0;	/* 0:disable, 1:HPM, 2:LPM */
 #if REDUCE_SODI_LOG
@@ -995,6 +1022,15 @@ void spm_go_to_sodi(u32 spm_flags, u32 spm_data)
 
 #if SPM_AEE_RR_REC
 	aee_rr_rec_sodi_val(1 << SPM_SODI_ENTER);
+#endif
+
+#if defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
+	pcmdesc = __spm_sodi.pcmdesc;
+#else
+	if (dyna_load_pcm[DYNA_LOAD_PCM_SODI].ready)
+		pcmdesc = &(dyna_load_pcm[DYNA_LOAD_PCM_SODI].desc);
+	else
+		BUG();
 #endif
 
 #if !defined(CONFIG_ARCH_MT6570) && !defined(CONFIG_ARCH_MT6580)
@@ -1131,6 +1167,15 @@ void spm_go_to_sodi(u32 spm_flags, u32 spm_data)
 	request_uart_to_wakeup();
 #endif
 
+	if ((((wakesta.r12 & WAKE_SRC_AFE) != 0) && (wakesta.timer_out < 100)) ||
+	(wakesta.timer_out < 10)) {
+		sodi_forbid_flag = 1;
+		sodi_forbid_time_ms = idle_get_current_time_ms();
+		sodi_debug("sodi_forbid_flag = 1\n");
+	} else {
+		sodi_forbid_flag = 0;
+	}
+
 #if REDUCE_SODI_LOG == 0
 	sodi_debug("emi-selfrefrsh cnt = %d, pcm_flag = 0x%x, SPM_PCM_RESERVE2 = 0x%x, %s\n",
 		   spm_read(SPM_PCM_PASR_DPD_3), spm_read(SPM_PCM_FLAGS),
@@ -1153,8 +1198,13 @@ void spm_go_to_sodi(u32 spm_flags, u32 spm_data)
 		need_log_out = 2;
 #if defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
 	} else if ((wakesta.r12 & (WAKE_SRC_GPT | WAKE_SRC_CONN2AP)) == 0) {
+#if defined(CONFIG_ARCH_MT6570)
+		if (((wakesta.r12 & WAKE_SRC_EINT) == 0) || (sodi_logout_curr_time - sodi_logout_prev_time) > 20)
+			need_log_out = 3;
+#else
 		/* not wakeup by GPT, CONN2AP and CLDMA_WDT */
 		need_log_out = 3;
+#endif
 #else
 	} else if ((wakesta.r12 & (WAKE_SRC_GPT | WAKE_SRC_CONN2AP | WAKE_SRC_CLDMA_MD)) == 0) {
 		/* not wakeup by GPT, CONN2AP and CLDMA_WDT */
@@ -1305,6 +1355,17 @@ RESTORE_IRQ:
 	aee_rr_rec_sodi_val(0);
 #endif
 }
+
+int sodi_forbid_by_prev_wakeup_info(void)
+{
+	if (sodi_forbid_flag == 1) {
+		if ((idle_get_current_time_ms() - sodi_forbid_time_ms) < 200)
+			return 1;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(sodi_forbid_by_prev_wakeup_info);
 
 void spm_sodi_mempll_pwr_mode(bool pwr_mode)
 {

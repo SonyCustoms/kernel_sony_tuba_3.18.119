@@ -19,6 +19,8 @@ subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLA
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
 subdir-ccflags-y += -I$(srctree)/drivers/mmc/host/mediatek/$(MTK_PLATFORM)
 
+obj-$(CONFIG_MTK_EMI_MPU)	+= emi_mpu/
+obj-$(CONFIG_MTK_DCS) += mtkdcs/
 obj-$(CONFIG_MTK_BASE_POWER) += base/
 obj-$(CONFIG_MTK_POWER_GS) += power_gs/
 obj-$(CONFIG_MEDIATEK_SOLUTION)	+= sched/
@@ -38,43 +40,8 @@ obj-$(CONFIG_MTK_M4U)	+= m4u/
 obj-$(CONFIG_MTK_GPT_SCHEME_SUPPORT)	+= partition/
 obj-$(CONFIG_MTK_SYSENV)	+= sysenv/
 obj-$(CONFIG_MTK_PWM)	    += pwm/
-ifneq ($(CONFIG_MTK_SENSOR_BIO),y)
-ifeq ($(CONFIG_MTK_SENSOR_SUPPORT),y)
-obj-$(CONFIG_CUSTOM_KERNEL_SENSORHUB)	+= sensorHub/
-obj-$(CONFIG_MTK_HWMON)	    += hwmon/
 obj-$(CONFIG_MTK_CAM_CAL) += cam_cal/src/
-obj-$(CONFIG_CUSTOM_KERNEL_ALSPS) += alsps/
-obj-$(CONFIG_CUSTOM_KERNEL_ACCELEROMETER) += accelerometer/
-obj-$(CONFIG_CUSTOM_KERNEL_GYROSCOPE) += gyroscope/
-obj-$(CONFIG_CUSTOM_KERNEL_MAGNETOMETER) += magnetometer/
-obj-$(CONFIG_CUSTOM_KERNEL_BAROMETER) += barometer/
-obj-$(CONFIG_CUSTOM_KERNEL_HUMIDITY) += humidity/
-obj-$(CONFIG_CUSTOM_KERNEL_STEP_COUNTER)	+= step_counter/
-obj-$(CONFIG_CUSTOM_KERNEL_SIGNIFICANT_MOTION_SENSOR)	+= step_counter/
-obj-$(CONFIG_CUSTOM_KERNEL_ACTIVITY_SENSOR)	+= activity_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_PICK_UP_SENSOR)	+= pick_up_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_SHAKE_SENSOR)	+= shake_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_FACE_DOWN_SENSOR)	+= face_down_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_GESTURE_SENSOR) += gesture/
-obj-$(CONFIG_CUSTOM_KERNEL_PEDOMETER)	+= pedometer/
-obj-$(CONFIG_CUSTOM_KERNEL_HEART)	+= heart_rate_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_TILT_DETECTOR_SENSOR)	+= tilt_detector_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_WAKE_GESTURE_SENSOR)	+= wake_gesture_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_GLANCE_GESTURE_SENSOR)	+= glance_gesture_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_ANSWER_CALL_SENSOR)	+= answer_call_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_GRAVITY_SENSOR)	+= gravity/
-obj-$(CONFIG_CUSTOM_KERNEL_RV_SENSOR)	+= rotationvector/
-obj-$(CONFIG_CUSTOM_KERNEL_LINEARACCEL_SENSOR)	+= linearacceleration/
-obj-$(CONFIG_CUSTOM_KERNEL_GRV_SENSOR)	+= gamerotationvector/
-obj-$(CONFIG_CUSTOM_KERNEL_GMRV_SENSOR)	+= geomagneticrotationvector/
-obj-$(CONFIG_CUSTOM_KERNEL_PDR_SENSOR)	+= pdr_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_FREEFALL_SENSOR)	+= freefall_sensor/
-obj-$(CONFIG_CUSTOM_KERNEL_UNCALI_GYRO_SENSOR)	+= uncali_gyro/
-obj-$(CONFIG_CUSTOM_KERNEL_UNCALI_MAG_SENSOR)	+= uncali_mag/
-endif
-else
-obj-y   += sensor_bio/
-endif
+obj-$(CONFIG_MTK_SENSORS_1_0) += sensors-1.0/
 obj-$(CONFIG_MTPROF)	+= mtprof/
 ifeq ($(CONFIG_MTK_I2C_EXTENSION),y)
 obj-$(CONFIG_MTK_I2C)  += i2c/
@@ -154,7 +121,7 @@ ifeq ($(CONFIG_HAVE_MTK_IN_HOUSE_TEE_SUPPORT),y)
 obj-$(CONFIG_TRUSTY) += gcpu/
 endif
 obj-$(CONFIG_TRUSTONIC_TEE_SUPPORT) += gud/
-obj-$(CONFIG_TRUSTONIC_TEE_SUPPORT) += secmem/
+obj-$(CONFIG_MTK_TRUSTED_MEMORY_SUBSYSTEM) += trusted_mem/
 obj-$(CONFIG_MICROTRUST_TEE_SUPPORT) += teei/
 obj-$(CONFIG_MTK_DEBUG_LATCH)	+= debug_latch/
 obj-$(CONFIG_MTK_DEBUG_TRACER)	+= debug_tracer/
@@ -187,19 +154,15 @@ obj-$(CONFIG_MEDIATEK_SOLUTION)	+= aee/
 obj-$(CONFIG_MTK_ATF_LOGGER)	+= atf_log/
 obj-$(CONFIG_MTK_MLOG) += mlog/
 obj-$(CONFIG_MTK_EMI_BWL)	+= emi_bwl/
-obj-$(CONFIG_MTK_EMI_MPU)	+= emi_mpu/
 obj-$(CONFIG_MTK_MJC_DRIVER)	+= mjc/
 obj-$(CONFIG_MD32_SUPPORT)     += md32/
 obj-$(CONFIG_MTK_EMI_MBW) += emi_mbw/
-ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/tc1_interface/),)
-obj-$(CONFIG_MTK_TC1_FEATURE)   += tc1_interface/
-endif
 obj-$(CONFIG_MTK_BTCVSD) += btcvsd/
 obj-$(CONFIG_MTK_MTD_NAND) += nand/
 obj-$(CONFIG_MTK_DUM_CHAR) += dum-char/
 obj-$(CONFIG_MTK_DYNAMIC_BOOST) += dynamic_boost/
 
-obj-$(CONFIG_MTK_DISPLAY_120HZ_SUPPORT)	+= rrc/
+
 obj-$(CONFIG_MTK_USB2JTAG_SUPPORT) += usb2jtag/
 # Crypto performance tools (disable by default)
 obj-n += crypto/
@@ -209,9 +172,5 @@ obj-$(CONFIG_TRUSTONIC_TEE_SUPPORT) += secwidevine/
 obj-$(CONFIG_MTK_POWER_GS)      += power_gs/
 obj-$(CONFIG_MTK_TINYSYS_SCP_SUPPORT) += scp/
 obj-$(CONFIG_MTK_TINYSYS_SCP_SUPPORT) += audio_ipi/
-ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/cpu_stress/),)
-obj-$(CONFIG_MTK_CPU_STRESS)	+= cpu_stress/
-endif
-obj-$(CONFIG_MTK_VOW_SUPPORT)	+= vow/
 obj-$(CONFIG_USB)	+= usb_boost/
 obj-$(CONFIG_RT_REGMAP) += rt-regmap/

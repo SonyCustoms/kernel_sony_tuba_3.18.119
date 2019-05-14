@@ -818,7 +818,7 @@ void IniSrv(void)
 #endif
 
 #ifdef	USE_VH_SYNC
-	RegWriteA_LC898122AF(STROBEFC, 0x80);	/* 0x001C       \8AO?\93\FC\97\CDStrobe\90M?\82ﾌ有\8C\F8 */
+	RegWriteA_LC898122AF(STROBEFC, 0x80);	/* 0x001C       外?入力Strobe信?の有効 */
 	RegWriteA_LC898122AF(STROBEDLYX, 0x00);	/* 0x001D       Delay */
 	RegWriteA_LC898122AF(STROBEDLYY, 0x00);	/* 0x001E       Delay */
 #endif				/* USE_VH_SYNC */
@@ -917,16 +917,16 @@ void IniGyr(void)
 	/*Gyro Filter Down Sampling */
 
 	RegWriteA_LC898122AF(WG_SHTON, 0x10);
-	/* CmShtOpe[1:0] 00: \83V?\83b\83^\81[OFF, 01: \83V?\83b\83^\81[ON, 1x:\8AO?\90\A7\8C\E4 */
+	/* CmShtOpe[1:0] 00: シ?ッターOFF, 01: シ?ッターON, 1x:外?制御 */
 
 #ifdef	DEF_SET
 	RegWriteA_LC898122AF(WG_SHTDLYTMR, 0x00);	/* 0x0117               Shutter Delay */
 	RegWriteA_LC898122AF(WG_GADSMP, 0x00);	/* 0x011C               Sampling timing */
 	RegWriteA_LC898122AF(WG_HCHR, 0x00);	/* 0x011B               H-filter limitter control not USE */
 	RegWriteA_LC898122AF(WG_LMT3MOD, 0x00);	/* 0x0118       [ - | - | - | - ][ - | - | - | CmLmt3Mod ] */
-	/* CmLmt3Mod       0: \92ﾊ十ED?\83~\83b\83^\81[\93\AE\8D\EC, 1: \89~\82ﾌ能BC\8Ca?\83~\83b\83^\81[\93\AE\8D\EC */
+	/* CmLmt3Mod       0: 通常?ミッター動作, 1: 円の半径?ミッター動作 */
 	RegWriteA_LC898122AF(WG_VREFADD, 0x12);
-	/* 0x0119               \83Z?\83^\81[\8Ds\82\A4\92x?RAM\82ﾌア\83h?\83X\89\BA\88\CA6\83r\83b\83g\81@(default 0x12 = GXH1Z2/GYH1Z2) */
+	/* 0x0119               セ?ター行う遅?RAMのアド?ス下位6ビット　(default 0x12 = GXH1Z2/GYH1Z2) */
 #endif
 	RegWriteA_LC898122AF(WG_SHTMOD, 0x06);	/* 0x0116               Shutter Hold mode */
 
@@ -940,11 +940,11 @@ void IniGyr(void)
 	RamWrite32A_LC898122AF(gxlmt3HS1, GYRLMT3_S2);	/* 0x102A */
 	RamWrite32A_LC898122AF(gylmt3HS1, GYRLMT3_S2);	/* 0x112A */
 
-	RamWrite32A_LC898122AF(gylmt4HS0, GYRLMT4_S1);	/* 0x112B        Y\8E\B2Limiter4 High?\92l0 */
-	RamWrite32A_LC898122AF(gxlmt4HS0, GYRLMT4_S1);	/* 0x102B        X\8E\B2Limiter4 High?\92l0 */
+	RamWrite32A_LC898122AF(gylmt4HS0, GYRLMT4_S1);	/* 0x112B        Y軸Limiter4 High?値0 */
+	RamWrite32A_LC898122AF(gxlmt4HS0, GYRLMT4_S1);	/* 0x102B        X軸Limiter4 High?値0 */
 
-	RamWrite32A_LC898122AF(gxlmt4HS1, GYRLMT4_S2);	/* 0x102C        X\8E\B2Limiter4 High?\92l1 */
-	RamWrite32A_LC898122AF(gylmt4HS1, GYRLMT4_S2);	/* 0x112C        Y\8E\B2Limiter4 High?\92l1 */
+	RamWrite32A_LC898122AF(gxlmt4HS1, GYRLMT4_S2);	/* 0x102C        X軸Limiter4 High?値1 */
+	RamWrite32A_LC898122AF(gylmt4HS1, GYRLMT4_S2);	/* 0x112C        Y軸Limiter4 High?値1 */
 
 
 	/* Pan/Tilt parameter */
@@ -1105,11 +1105,11 @@ void IniAdj(void)
 	IniPtAve();		/* Average setting */
 
 	/* OIS */
-	RegWriteA_LC898122AF(CMSDAC0, BIAS_CUR_OIS);	/* 0x0251       Hall Dac\93d\97\AC */
+	RegWriteA_LC898122AF(CMSDAC0, BIAS_CUR_OIS);	/* 0x0251       Hall Dac電流 */
 	RegWriteA_LC898122AF(OPGSEL0, AMP_GAIN_X);	/* 0x0253       Hall amp Gain X */
 	RegWriteA_LC898122AF(OPGSEL1, AMP_GAIN_Y);	/* 0x0254       Hall amp Gain Y */
 	/* AF */
-	RegWriteA_LC898122AF(CMSDAC1, BIAS_CUR_AF);	/* 0x0252       Hall Dac\93d\97\AC */
+	RegWriteA_LC898122AF(CMSDAC1, BIAS_CUR_AF);	/* 0x0252       Hall Dac電流 */
 	RegWriteA_LC898122AF(OPGSEL2, AMP_GAIN_AF);	/* 0x0255       Hall amp Gain AF */
 
 	RegWriteA_LC898122AF(OSCSET, OSC_INI);	/* 0x0257       OSC ini */
@@ -1442,7 +1442,7 @@ void ClrGyr(unsigned short UsClrFil, unsigned char UcClrMod)
 	RegWriteA_LC898122AF(WC_RAMDLYMOD0, (unsigned char)UsClrFil);	/* 0x018E               FRAM Initialize Lbyte */
 
 	/*Enable Clear */
-	RegWriteA_LC898122AF(WC_RAMINITON, UcClrMod);	/* 0x0102       [ - | - | - | - ][ - | - | \92x?Clr | \8CW?Clr ] */
+	RegWriteA_LC898122AF(WC_RAMINITON, UcClrMod);	/* 0x0102       [ - | - | - | - ][ - | - | 遅?Clr | 係?Clr ] */
 
 	/*Check RAM Clear complete */
 	do {

@@ -24,11 +24,6 @@
 /*#include <mach/mt_typedefs.h>*/
 #endif
 
-/* #define USB_FORCE_ON */
-/* USB FORCE ON for FPGA/U3_COMPLIANCE cases */
-#if defined(CONFIG_FPGA_EARLY_PORTING) || defined(U3_COMPLIANCE) || defined(FOR_BRING_UP)
-#define USB_FORCE_ON
-#endif
 
 unsigned int cable_mode = CABLE_MODE_NORMAL;
 #ifdef CONFIG_MTK_UART_USB_SWITCH
@@ -98,7 +93,7 @@ void connection_work(struct work_struct *data)
 #ifdef CONFIG_MTK_UART_USB_SWITCH
 	if (!usb_phy_check_in_uart_mode()) {
 #endif
-		bool is_usb_cable = usb_cable_connected();
+		bool is_usb_cable;
 
 #ifndef CONFIG_FPGA_EARLY_PORTING
 
@@ -120,6 +115,7 @@ void connection_work(struct work_struct *data)
 		}
 #endif
 
+		is_usb_cable = usb_cable_connected();
 		os_printk(K_INFO, "%s musb %s, cable %s\n", __func__,
 			  ((connection_work_dev_status ==
 			    0) ? "INIT" : ((connection_work_dev_status == 1) ? "ON" : "OFF")),
@@ -389,11 +385,12 @@ ssize_t musb_cmode_store(struct device *dev, struct device_attribute *attr,
 	musb = dev_to_musb(dev);
 
 	if (1 == sscanf(buf, "%ud", &cmode)) {
-		os_printk(K_INFO, "%s %s --> %s\n", __func__, usb_mode_str[cable_mode],
-			  usb_mode_str[cmode]);
 
 		if (cmode >= CABLE_MODE_MAX)
 			cmode = CABLE_MODE_NORMAL;
+
+		os_printk(K_INFO, "%s %s --> %s\n", __func__, usb_mode_str[cable_mode],
+			  usb_mode_str[cmode]);
 
 		if (cable_mode != cmode) {
 

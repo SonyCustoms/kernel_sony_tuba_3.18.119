@@ -127,7 +127,7 @@
 #define K_DEBUG	(1<<0)
 
 /*Set the debug level for xhci driver*/
-extern u32 xhci_debug_level;
+extern int xhci_debug_level;
 
 extern struct xhci_hcd *mtk_xhci;
 
@@ -144,6 +144,10 @@ extern int get_num_u2_ports(struct xhci_hcd *xhci);
 extern void mtk_xhci_ck_timer_init(struct xhci_hcd *);
 extern int mtk_xhci_set(struct usb_hcd *hcd, struct xhci_hcd *xhci);
 extern void mtk_xhci_reset(struct xhci_hcd *xhci);
+#ifdef CONFIG_DUAL_ROLE_USB_INTF
+extern void mt_usb_dual_role_to_none(void);
+extern void mt_usb_dual_role_to_host(void);
+#endif
 extern bool mtk_is_host_mode(void);
 
 #ifdef CONFIG_USB_MTK_DUALMODE

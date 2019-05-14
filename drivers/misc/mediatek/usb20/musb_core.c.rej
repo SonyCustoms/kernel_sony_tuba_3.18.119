@@ -1,0 +1,10 @@
+--- drivers/misc/mediatek/usb20/musb_core.c
++++ drivers/misc/mediatek/usb20/musb_core.c
+@@ -2663,6 +2677,7 @@ static int musb_suspend_noirq(struct device *dev)
+ 	mtk_usb_power = false;
+ 
+ 	usb_pre_clock(false);
++
+ 	/*spin_unlock_irqrestore(&musb->lock, flags); */
+ 	return 0;
+ }

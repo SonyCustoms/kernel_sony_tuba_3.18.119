@@ -1,0 +1,266 @@
+--- drivers/misc/mediatek/usb11/mtk11_qmu.c
++++ drivers/misc/mediatek/usb11/mtk11_qmu.c
+@@ -11,11 +11,13 @@
+  * GNU General Public License for more details.
+  */
+ 
+-#ifdef MUSBFSH_QMU_SUPPORT_HOST
++#ifdef MUSBFSH_QMU_SUPPORT
+ #include <linux/dma-mapping.h>
+ #include <linux/dmapool.h>
+ #include <linux/list.h>
+ #include "musbfsh_qmu.h"
++#include "mtk11_qmu.h"
++#include "musbfsh_host.h"
+ 
+ static PGPD Rx_gpd_head[MAX_QMU_EP + 1];
+ static PGPD Tx_gpd_head[MAX_QMU_EP + 1];
+@@ -342,7 +348,7 @@ static void prepare_tx_gpd(u8 *pBuf, u32 data_len, u8 ep_num, u8 zlp, u8 isioc)
+ 
+ }
+ 
+-bool mtk_is_qmu_enabled(u8 ep_num, u8 isRx)
++bool mtk11_is_qmu_enabled(u8 ep_num, u8 isRx)
+ {
+ 	void __iomem *base = musbfsh_qmu_base;
+ 
+@@ -496,7 +503,7 @@ void mtk11_qmu_enable(struct musbfsh *musbfsh, u8 ep_num, u8 isRx)
+ 	}
+ }
+ 
+-void mtk_qmu_stop(u8 ep_num, u8 isRx)
++void mtk11_qmu_stop(u8 ep_num, u8 isRx)
+ {
+ 	void __iomem *base = musbfsh_qmu_base;
+ 
+@@ -517,14 +524,14 @@ void mtk_qmu_stop(u8 ep_num, u8 isRx)
+ 	}
+ }
+ 
+-static void mtk_qmu_disable(u8 ep_num, u8 isRx)
++static void mtk11_qmu_disable(u8 ep_num, u8 isRx)
+ {
+ 	u32 QCR;
+ 	void __iomem *base = musbfsh_qmu_base;
+ 
+ 	QMU_WARN("disable %s(%d)\n", isRx ? "RQ" : "TQ", ep_num);
+ 
+-	mtk_qmu_stop(ep_num, isRx);
++	mtk11_qmu_stop(ep_num, isRx);
+ 	if (isRx) {
+ 		/* / clear Queue start address */
+ 		MGC_WriteQMU32(base, MGC_O_QMU_RQSAR(ep_num), 0);
+@@ -644,88 +675,108 @@ void mtk11_disable_q(struct musbfsh *musbfsh, u8 ep_num, u8 isRx)
+ 	void __iomem *epio = hw_ep->regs;
+ 	u16 csr;
+ 
+-	mtk_qmu_disable(ep_num, isRx);
+-	qmu_reset_gpd_pool(ep_num, isRx);
++	mtk11_qmu_disable(ep_num, isRx);
++	mtk11_qmu_reset_gpd_pool(ep_num, isRx);
+ 
+ 	musbfsh_ep_select(mbase, ep_num);
+ 	if (isRx) {
+ 		csr = musbfsh_readw(epio, MUSBFSH_RXCSR);
+ 		csr &= ~MUSBFSH_RXCSR_DMAENAB;
+ 		musbfsh_writew(epio, MUSBFSH_RXCSR, csr);
+-		flush_ep_csr(musbfsh, ep_num, isRx);
++		mtk11_flush_ep_csr(musbfsh, ep_num, isRx);
+ 	} else {
+ 		csr = musbfsh_readw(epio, MUSBFSH_TXCSR);
+ 		csr &= ~MUSBFSH_TXCSR_DMAENAB;
+ 		musbfsh_writew(epio, MUSBFSH_TXCSR, csr);
+-		flush_ep_csr(musbfsh, ep_num, isRx);
++		mtk11_flush_ep_csr(musbfsh, ep_num, isRx);
+ 	}
+ }
+ 
+-void mtk_qmu_err_recover(struct musbfsh *musbfsh, u8 ep_num, u8 isRx, bool is_len_err)
++void mtk11_qmu_host_rx_err(struct musbfsh *musbfsh, u8 epnum)
+ {
+-	struct musbfsh_ep *musbfsh_ep;
+-	struct musb_request *request;
++	u16 rx_csr, val;
++	struct musbfsh_hw_ep *hw_ep = musbfsh->endpoints + epnum;
++	void __iomem *epio = hw_ep->regs;
++	u32 status = 0;
++	void __iomem *mbase = musbfsh->mregs;
++
++	musbfsh_ep_select(mbase, epnum);
++	rx_csr = musbfsh_readw(epio, MUSBFSH_RXCSR);
++	val = rx_csr;
++
++	status = 0;
++
++	QMU_ERR("<== hw %d rxcsr %04x\n", epnum, rx_csr);
+ 
+-	if (musbfsh->is_host) {
+-		QMU_ERR("!SUPPORT HOST RECOVER\n");
+-		BUG();
++	/* check for errors, concurrent stall & unlink is not really
++	 * handled yet! */
++	if (rx_csr & MUSBFSH_RXCSR_H_RXSTALL) {
++		QMU_ERR("RX end %d STALL\n", epnum);
++
++		/* handle stall in MAC */
++		rx_csr &= ~MUSBFSH_RXCSR_H_RXSTALL;
++		musbfsh_writew(epio, MUSBFSH_RXCSR, rx_csr);
++
++		/* stall; record URB status */
++		status = -EPIPE;
++	} else if (rx_csr & MUSBFSH_RXCSR_H_ERROR) {
++		QMU_ERR("end %d RX proto error,rxtoggle=0x%x\n", epnum,
++		    musbfsh_readl(mbase, MUSBFSH_RXTOG));
++
++		status = -EPROTO;
++		musbfsh_writeb(epio, MUSBFSH_RXINTERVAL, 0);
++	} else if (rx_csr & MUSBFSH_RXCSR_DATAERROR)
++		QMU_ERR("RX end %d ISO data error\n", epnum);
++	else if (rx_csr & MUSBFSH_RXCSR_INCOMPRX) {
++		QMU_ERR("end %d high bandwidth incomplete ISO packet RX\n", epnum);
++		status = -EPROTO;
++	}
++
++	/* faults abort the transfer */
++	if (status) {
++		musbfsh_h_flush_rxfifo(hw_ep, 0);
++		musbfsh_writeb(epio, MUSBFSH_RXINTERVAL, 0);
+ 	}
++	QMU_ERR("done\n");
++}
++
++void mtk11_qmu_host_tx_err(struct musbfsh *musbfsh, u8 epnum)
++{
++	u16 tx_csr;
++	struct musbfsh_hw_ep *hw_ep = musbfsh->endpoints + epnum;
++	void __iomem *epio = hw_ep->regs;
++	void __iomem *mbase = musbfsh->mregs;
+ 
+-	/* same action as musb_flush_qmu */
+-	mtk_qmu_stop(ep_num, isRx);
+-	qmu_reset_gpd_pool(ep_num, isRx);
++	musbfsh_ep_select(mbase, epnum);
++	tx_csr = musbfsh_readw(epio, MUSBFSH_TXCSR);
+ 
+-	/* same action as musb_restart_qmu */
+-	flush_ep_csr(musbfsh, ep_num, isRx);
+-	mtk_qmu_enable(musbfsh, ep_num, isRx);
++	QMU_ERR("OUT/TX%d end, csr %04x\n", epnum, tx_csr);
+ 
++	tx_csr &= ~(MUSBFSH_TXCSR_AUTOSET
++		    | MUSBFSH_TXCSR_DMAENAB
++		    | MUSBFSH_TXCSR_H_ERROR | MUSBFSH_TXCSR_H_RXSTALL | MUSBFSH_TXCSR_H_NAKTIMEOUT);
++
++	musbfsh_ep_select(mbase, epnum);
++	musbfsh_writew(epio, MUSBFSH_TXCSR, tx_csr);
++	/* REVISIT may need to clear FLUSHFIFO ... */
++	musbfsh_writew(epio, MUSBFSH_TXCSR, tx_csr);
++	musbfsh_writeb(epio, MUSBFSH_TXINTERVAL, 0);
++	QMU_ERR("done\n");
++}
++
++void mtk11_qmu_err_recover(struct musbfsh *musbfsh, u8 ep_num, u8 isRx, bool is_len_err)
++{
++	/*most case caused by device disconnect*/
++	QMU_ERR("DO QMU ERR RECOVER\n");
+ 	if (isRx)
+-		musbfsh_ep = &musbfsh->endpoints[ep_num].ep_out;
++		mtk11_qmu_host_rx_err(musbfsh, ep_num);
+ 	else
+-		musbfsh_ep = &musbfsh->endpoints[ep_num].ep_in;
+-
+-	/* requeue all req , basically the same as musb_kick_D_CmdQ */
+-	list_for_each_entry(request, &musbfsh_ep->req_list, list) {
+-		QMU_ERR("request 0x%p length(0x%d) len_err(%d)\n", request, request->request.length,
+-			is_len_err);
+-
+-		if (request->request.dma != DMA_ADDR_INVALID) {
+-			if (request->tx) {
+-				QMU_ERR("[TX] gpd=%p, epnum=%d, len=%d\n", Tx_gpd_end[ep_num],
+-					ep_num, request->request.length);
+-				request->request.actual = request->request.length;
+-				if (request->request.length > 0) {
+-					QMU_ERR("[TX]" "Send non-ZLP cases\n");
+-					mtk_qmu_insert_task(request->epnum,
+-							    isRx,
+-							    (u8 *) request->request.dma,
+-							    request->request.length,
+-							    ((request->request.zero == 1) ? 1 : 0), 1);
+-
+-				} else if (request->request.length == 0) {
+-					/* this case may be a problem */
+-					QMU_ERR("[TX]" "Send ZLP cases, may be a problem!!!\n");
+-					musb_tx_zlp_qmu(musbfsh, request->epnum);
+-					musb_g_giveback(musbfsh_ep, &(request->request), 0);
+-				} else {
+-					QMU_ERR("ERR, TX, request->request.length(%d)\n",
+-						request->request.length);
+-				}
+-			} else {
+-				QMU_ERR("[RX] gpd=%p, epnum=%d, len=%d\n",
+-					Rx_gpd_end[ep_num], ep_num, request->request.length);
+-				mtk_qmu_insert_task(request->epnum,
+-						    isRx,
+-						    (u8 *) request->request.dma,
+-						    request->request.length,
+-						    ((request->request.zero == 1) ? 1 : 0), 1);
+-			}
+-		}
+-	}
+-	QMU_ERR("RESUME QMU\n");
++		mtk11_qmu_host_tx_err(musbfsh, ep_num);
++
++	return;
+ }
+ 
+-void mtk_qmu_irq_err(struct musbfsh *musbfsh, u32 qisar)
++void mtk11_qmu_irq_err(struct musbfsh *musbfsh, u32 qisar)
+ {
+ 	u8 i;
+ 	u32 wQmuVal;
+@@ -855,10 +906,10 @@ void mtk_qmu_irq_err(struct musbfsh *musbfsh, u32 qisar)
+ 
+ 	/* QMU ERR RECOVER , only servie one ep error ? */
+ 	if (err_ep_num)
+-		mtk_qmu_err_recover(musbfsh, err_ep_num, isRx, is_len_err);
++		mtk11_qmu_err_recover(musbfsh, err_ep_num, isRx, is_len_err);
+ }
+ 
+-void h_qmu_done_rx(struct musbfsh *musbfsh, u8 ep_num)
++void h_mtk11_qmu_done_rx(struct musbfsh *musbfsh, u8 ep_num)
+ {
+ 	void __iomem *base = musbfsh_qmu_base;
+ 
+@@ -934,8 +985,8 @@ void h_qmu_done_rx(struct musbfsh *musbfsh, u8 ep_num)
+ 
+ 		urb = next_urb(qh);
+ 		if (!urb) {
+-			DBG(4, "extra RX%d ready\n", ep_num);
+-			mtk_qmu_stop(ep_num, USB_DIR_IN);
++			INFO("extra RX%d ready\n", ep_num);
++			mtk11_qmu_stop(ep_num, USB_DIR_IN);
+ 			return;
+ 		}
+ 
+@@ -1020,10 +1071,10 @@ void h_qmu_done_rx(struct musbfsh *musbfsh, u8 ep_num)
+ 
+ 	QMU_INFO("[RXD]""%s EP%d, Last=%p, End=%p, complete\n", __func__,
+ 				ep_num, Rx_gpd_last[ep_num], Rx_gpd_end[ep_num]);
+-	DBG(4, "\n");
++	INFO("\n");
+ }
+ 
+-void h_qmu_done_tx(struct musbfsh *musbfsh, u8 ep_num)
++void h_mtk11_qmu_done_tx(struct musbfsh *musbfsh, u8 ep_num)
+ {
+ 	void __iomem *base = musbfsh_qmu_base;
+ 	TGPD *gpd = Tx_gpd_last[ep_num];
+@@ -1073,7 +1124,7 @@ void h_qmu_done_tx(struct musbfsh *musbfsh, u8 ep_num)
+ 		urb = next_urb(qh);
+ 		if (!urb) {
+ 			QMU_ERR("extra TX%d ready\n", ep_num);
+-			mtk_qmu_stop(ep_num, USB_DIR_OUT);
++			mtk11_qmu_stop(ep_num, USB_DIR_OUT);
+ 			return;
+ 		}
+ 

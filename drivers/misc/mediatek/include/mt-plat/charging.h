@@ -624,6 +624,7 @@ extern unsigned int upmu_get_reg_value(unsigned int reg);
 extern void Charger_Detect_Init(void);
 extern void Charger_Detect_Release(void);
 extern int hw_charging_get_charger_type(void);
+extern void hw_bc11_dcd_release(void) __attribute__((weak));
 extern void mt_power_off(void);
 extern unsigned int mt6311_get_chip_id(void);
 extern int is_mt6311_exist(void);
@@ -631,6 +632,8 @@ extern int is_mt6311_sw_ready(void);
 
 extern void hw_charging_enable_dp_voltage(int ison);
 
+/* For RT5735A SDA low workaround */
+extern void battery_disable_batfet(void);
 
 /* switch charger */
 extern void switch_charger_set_vindpm(unsigned int chr_v);

@@ -73,7 +73,7 @@
 #include "mtkfb_fence.h"
 #include "extd_multi_control.h"
 #include "m4u.h"
-
+#include "layering_rule.h"
 #include "compat_mtk_disp_mgr.h"
 
 
@@ -338,7 +338,7 @@ static int __trigger_display(disp_session_config *config)
 
 	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY) {
 		pr_err("%s: legecy API are not supported!\n", __func__);
-		BUG();
+		WARN(1, "%s: legacy API are not supported!\n", __func__);
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_EXTERNAL) {
 		mutex_lock(&disp_session_lock);
 		ret = external_display_trigger(config->tigger_mode, session_id);
@@ -938,7 +938,6 @@ static int __set_input(disp_session_input_config *session_input, int overlap_lay
 
 	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY) {
 		pr_err("%s: legecy API are not supported!\n", __func__);
-		BUG();
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_EXTERNAL) {
 		ret = set_external_buffer(session_input);
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_MEMORY) {
@@ -1072,6 +1071,7 @@ static int __set_output(disp_session_output_config *session_output)
 	unsigned int session_id = 0;
 	unsigned long dst_mva = 0;
 	disp_session_sync_info *session_info;
+	int ret = 0;
 
 	session_id = session_output->session_id;
 	session_info = disp_get_session_sync_info_for_debug(session_id);
@@ -1081,7 +1081,7 @@ static int __set_output(disp_session_output_config *session_output)
 
 	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY) {
 		pr_err("%s: legecy API are not supported!\n", __func__);
-		BUG();
+		ret = -EINVAL;
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_MEMORY) {
 		disp_mem_output_config primary_output;
 
@@ -1132,13 +1132,16 @@ static int __set_output(disp_session_output_config *session_output)
 		     session_output->config.buff_idx, dst_mva, session_output->config.fmt,
 		     session_output->config.width, session_output->config.height,
 		     session_output->config.pitch);
+	} else {
+			pr_err("%s: legecy API are not supported in external\n", __func__);
+			ret = -EINVAL;
 	}
 
 
 	if (session_info)
 		dprec_done(&session_info->event_setoutput, session_output->config.buff_idx, 0);
 
-	return 0;
+	return ret;
 }
 
 int _ioctl_set_output_buffer(unsigned long arg)
@@ -1325,6 +1328,8 @@ int _ioctl_get_display_caps(unsigned long arg)
 	caps_info.is_output_rotated = 1;
 #endif
 
+	if (disp_helper_get_option(DISP_OPT_HRT))
+		caps_info.disp_feature |= DISP_FEATURE_HRT;
 	DISPDBG("%s mode:%d, pass:%d, max_layer_num:%d\n",
 		__func__, caps_info.output_mode, caps_info.output_pass, caps_info.max_layer_num);
 
@@ -1380,6 +1385,33 @@ int _ioctl_set_vsync(unsigned long arg)
 	}
 
 	ret = primary_display_force_set_vsync_fps(fps);
+	return ret;
+}
+
+int _ioctl_query_valid_layer(unsigned long arg)
+{
+	int ret = 0;
+	int i = 0;
+	disp_layer_info disp_info_user;
+	void __user *argp = (void __user *)arg;
+
+	if (copy_from_user(&disp_info_user, argp, sizeof(disp_info_user))) {
+		DISPERR("[FB]: copy_from_user failed! line:%d\n", __LINE__);
+		return -EFAULT;
+	}
+	for (i = 0; i < 2; i++) {
+		if (!access_ok(VERIFY_READ, disp_info_user.input_config[i], sizeof(layer_config))) {
+			DISPERR("[FB]: can not read memory! line:%d\n", __LINE__);
+			return -EFAULT;
+		}
+	}
+
+	ret = layering_rule_start(&disp_info_user, 0);
+
+	if (copy_to_user(argp, &disp_info_user, sizeof(disp_info_user))) {
+		DISPERR("[FB]: copy_to_user failed! line:%d\n", __LINE__);
+		return -EFAULT;
+	}
 	return ret;
 }
 
@@ -1450,6 +1482,10 @@ const char *_session_ioctl_spy(unsigned int cmd)
 		return "DISP_IOCTL_SET_GAMMALUT";
 	case DISP_IOCTL_SET_CCORR:
 		return "DISP_IOCTL_SET_CCORR";
+	case DISP_IOCTL_CCORR_EVENTCTL:
+		return "DISP_IOCTL_CCORR_EVENTCTL";
+	case DISP_IOCTL_CCORR_GET_IRQ:
+		return "DISP_IOCTL_CCORR_GET_IRQ";
 	case DISP_IOCTL_SET_PQPARAM:
 		return "DISP_IOCTL_SET_PQPARAM";
 	case DISP_IOCTL_GET_PQPARAM:
@@ -1476,6 +1512,8 @@ const char *_session_ioctl_spy(unsigned int cmd)
 		return "DISP_IOCTL_OD_CTL";
 	case DISP_IOCTL_GET_DISPLAY_CAPS:
 		return "DISP_IOCTL_GET_DISPLAY_CAPS";
+	case DISP_IOCTL_QUERY_VALID_LAYER:
+		return "DISP_IOCTL_QUERY_VALID_LAYER";
 	default:
 		{
 			return "unknown";
@@ -1549,6 +1587,10 @@ long mtk_disp_mgr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		{
 			return primary_display_get_lcm_index();
 		}
+	case DISP_IOCTL_QUERY_VALID_LAYER:
+		{
+			return _ioctl_query_valid_layer(arg);
+		}
 	case DISP_IOCTL_SCREEN_FREEZE:
 		{
 			return _ioctl_screen_freeze(arg);
@@ -1559,6 +1601,8 @@ long mtk_disp_mgr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case DISP_IOCTL_AAL_SET_PARAM:
 	case DISP_IOCTL_SET_GAMMALUT:
 	case DISP_IOCTL_SET_CCORR:
+	case DISP_IOCTL_CCORR_EVENTCTL:
+	case DISP_IOCTL_CCORR_GET_IRQ:
 	case DISP_IOCTL_SET_PQPARAM:
 	case DISP_IOCTL_GET_PQPARAM:
 	case DISP_IOCTL_SET_PQINDEX:
@@ -1754,6 +1798,8 @@ static long mtk_disp_mgr_compat_ioctl(struct file *file, unsigned int cmd,  unsi
 	case DISP_IOCTL_PQ_GET_MDP_TDSHP_REG:
 	case DISP_IOCTL_WRITE_SW_REG:
 	case DISP_IOCTL_READ_SW_REG:
+	case DISP_IOCTL_CCORR_EVENTCTL:
+	case DISP_IOCTL_CCORR_GET_IRQ:
 		{
 			ret = primary_display_user_cmd(cmd, arg);
 			break;

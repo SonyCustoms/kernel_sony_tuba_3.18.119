@@ -1,0 +1,62 @@
+--- drivers/misc/mediatek/eccci/port_proxy.c
++++ drivers/misc/mediatek/eccci/port_proxy.c
+@@ -1148,11 +1199,15 @@ long port_proxy_user_ioctl(struct port_proxy *proxy_p, int ch, unsigned int cmd,
+ 	char md_protol[] = "DHL";
+ 	unsigned int sig = 0;
+ 	unsigned int pid = 0;
++	int retry;
+ #ifdef CONFIG_MTK_SIM_LOCK_POWER_ON_WRITE_PROTECT
+ 	unsigned int val;
+ 	char magic_pattern[64];
+ #endif
+ 
++	static atomic_t last_md1_type;
++	static atomic_t last_md3_type;
++
+ 	switch (cmd) {
+ 	case CCCI_IOC_GET_MD_PROTOCOL_TYPE:
+ 		CCCI_ERROR_LOG(md_id, CHAR, "Call CCCI_IOC_GET_MD_PROTOCOL_TYPE!\n");
+@@ -1387,15 +1482,9 @@ long port_proxy_user_ioctl(struct port_proxy *proxy_p, int ch, unsigned int cmd,
+ 			CCCI_NORMAL_LOG(md_id, CHAR, "IOC_RELOAD_MD_TYPE: copy_from_user fail!\n");
+ 			ret = -EFAULT;
+ 		} else {
+-			CCCI_NORMAL_LOG(md_id, CHAR, "IOC_RELOAD_MD_TYPE: storing md type(%d)!\n", md_type);
+-			ccci_event_log("md%d: IOC_RELOAD_MD_TYPE: storing md type(%d)!\n", md_id, md_type);
+-			if ((md_type >= modem_ultg) && (md_type <= MAX_IMG_NUM) && (md_id == MD_SYS1)) {
+-				if (md_capability(MD_SYS1, md_type, 0))
+-					ccci_md_set_reload_type(proxy_p->md_obj, md_type);
+-				else
+-					ret = -1;
+-			} else
+-				ccci_md_set_reload_type(proxy_p->md_obj, md_type);
++			CCCI_NORMAL_LOG(md_id, CHAR, "IOC_RELOAD_MD_TYPE: storing md type(0x%x)!\n", md_type);
++			ccci_event_log("md%d: IOC_RELOAD_MD_TYPE: storing md type(0x%x)!\n", md_id, md_type);
++			ccci_md_set_reload_type(proxy_p->md_obj, md_type);
+ 		}
+ 		break;
+ 	case CCCI_IOC_SET_MD_IMG_EXIST:
+@@ -1431,7 +1520,23 @@ long port_proxy_user_ioctl(struct port_proxy *proxy_p, int ch, unsigned int cmd,
+ 		}
+ 		break;
+ 	case CCCI_IOC_GET_MD_TYPE:
+-		md_type = ccci_md_get_load_type(proxy_p->md_obj);
++		retry = 10;
++		do {
++			md_type = get_legacy_md_type(md_id);
++			if (md_type) {
++				if (md_id == 1)
++					atomic_set(&last_md1_type, md_type);
++				else
++					atomic_set(&last_md3_type, md_type);
++				break;
++			}
++			msleep(500);
++			retry--;
++			if (md_type == 0 && retry == 0)
++				md_type = md_id == 1 ? atomic_read(&last_md1_type) : atomic_read(&last_md3_type);
++		} while (retry);
++		CCCI_NORMAL_LOG(md_id, CHAR, "CCCI_IOC_GET_MD_TYPE: %d!\n", md_type);
++		ccci_event_log("md%d: CCCI_IOC_GET_MD_TYPE: 0x%x\n", md_id, md_type);
+ 		ret = put_user((unsigned int)md_type, (unsigned int __user *)arg);
+ 		break;
+ 	case CCCI_IOC_STORE_MD_TYPE:

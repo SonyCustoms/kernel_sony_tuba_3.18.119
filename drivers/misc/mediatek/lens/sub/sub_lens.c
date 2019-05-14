@@ -24,9 +24,14 @@
 #include <linux/cdev.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
-#include <asm/atomic.h>
+#include <linux/atomic.h>
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
+#endif
+
+/* kernel standard for PMIC*/
+#if !defined(CONFIG_MTK_LEGACY)
+#include <linux/regulator/consumer.h>
 #endif
 
 #include "lens_info.h"
@@ -111,13 +116,104 @@ static long AF_SetMotorName(__user stAF_MotorName *pstMotorName)
 		LOG_INF("Search Motor Name : %s\n", g_stAF_DrvList[i].uDrvName);
 		if (strcmp(stMotorName.uMotorName, g_stAF_DrvList[i].uDrvName) == 0) {
 			g_pstAF_CurDrv = &g_stAF_DrvList[i];
-			g_pstAF_CurDrv->pAF_SetI2Cclient(g_pstAF_I2Cclient, &g_AF_SpinLock, &g_s4AF_Opened);
-			i4RetValue = 1;
+			i4RetValue = g_pstAF_CurDrv->pAF_SetI2Cclient(g_pstAF_I2Cclient,
+								&g_AF_SpinLock, &g_s4AF_Opened);
 			break;
 		}
 	}
 	return i4RetValue;
 }
+
+#if 0
+static long AF_SetLensMotorName(struct stAF_MotorName stMotorName)
+{
+	long i4RetValue = -1;
+	int i;
+
+	LOG_INF("AF_SetLensMotorName - Set Motor Name : %s\n", stMotorName.uMotorName);
+
+	for (i = 0; i < MAX_NUM_OF_LENS; i++) {
+		if (g_stAF_DrvList[i].uEnable != 1)
+			break;
+
+		LOG_INF("AF_SetLensMotorName - Search Motor Name : %s\n", g_stAF_DrvList[i].uDrvName);
+		if (strcmp(stMotorName.uMotorName, g_stAF_DrvList[i].uDrvName) == 0) {
+			g_pstAF_CurDrv = &g_stAF_DrvList[i];
+			i4RetValue = g_pstAF_CurDrv->pAF_SetI2Cclient(g_pstAF_I2Cclient,
+								&g_AF_SpinLock, &g_s4AF_Opened);
+			break;
+		}
+	}
+	return i4RetValue;
+}
+#endif
+
+#if !defined(CONFIG_MTK_LEGACY)
+static void AFRegulatorCtrl(int Stage)
+{
+	if (Stage == 0) {
+		if (regVCAMAF == NULL) {
+			struct device_node *node, *kd_node;
+
+			/* check if customer camera node defined */
+			node = of_find_compatible_node(NULL, NULL, "mediatek,CAMERA_MAIN_AF");
+
+			if (node) {
+				kd_node = lens_device->of_node;
+				lens_device->of_node = node;
+
+				regVCAMAF = regulator_get(lens_device, "vcamaf");
+				LOG_INF("[Init] regulator_get %p\n", regVCAMAF);
+
+				lens_device->of_node = kd_node;
+			}
+		}
+	} else if (Stage == 1) {
+		int Status = regulator_is_enabled(regVCAMAF);
+
+		LOG_INF("regulator_is_enabled %d\n", Status);
+
+		if (!Status) {
+			Status = regulator_set_voltage(regVCAMAF, 2800000, 2800000);
+
+			LOG_INF("regulator_set_voltage %d\n", Status);
+
+			if (Status != 0)
+				LOG_INF("regulator_set_voltage fail\n");
+
+			Status = regulator_enable(regVCAMAF);
+			LOG_INF("regulator_enable %d\n", Status);
+
+			if (Status != 0)
+				LOG_INF("regulator_enable fail\n");
+
+			g_regVCAMAFEn = 1;
+			msleep(100);
+		} else {
+			LOG_INF("AF Power on\n");
+		}
+	} else {
+		if (g_regVCAMAFEn == 1) {
+			int Status = regulator_is_enabled(regVCAMAF);
+
+			LOG_INF("regulator_is_enabled %d\n", Status);
+
+			if (Status) {
+				LOG_INF("Camera Power enable\n");
+
+				Status = regulator_disable(regVCAMAF);
+				LOG_INF("regulator_disable %d\n", Status);
+				if (Status != 0)
+					LOG_INF("Fail to regulator_disable\n");
+			}
+			regulator_put(regVCAMAF);
+			LOG_INF("AFIOC_S_SETPOWERCTRL regulator_put %p\n", regVCAMAF);
+			regVCAMAF = NULL;
+			g_regVCAMAFEn = 0;
+		}
+	}
+}
+#endif
 
 /* ////////////////////////////////////////////////////////////// */
 static long AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, unsigned long a_u4Param)
@@ -126,8 +222,17 @@ static long AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, unsigned 
 
 	switch (a_u4Command) {
 	case AFIOC_S_SETDRVNAME:
-		i4RetValue = AF_SetMotorName((__user stAF_MotorName *)(a_u4Param));
+		i4RetValue = AF_SetMotorName((__user struct stAF_MotorName *)(a_u4Param));
 		break;
+
+	#if !defined(CONFIG_MTK_LEGACY)
+	case AFIOC_S_SETPOWERCTRL:
+		AFRegulatorCtrl(0);
+
+		if (a_u4Param > 0)
+			AFRegulatorCtrl(1);
+		break;
+	#endif
 
 	default:
 		if (g_pstAF_CurDrv)
@@ -208,8 +313,6 @@ static const struct file_operations g_stAF_fops = {
 
 static inline int Register_AF_CharDrv(void)
 {
-	struct device *vcm_device = NULL;
-
 	LOG_INF("Start\n");
 
 	/* Allocate char driver no. */
@@ -221,7 +324,7 @@ static inline int Register_AF_CharDrv(void)
 	/* Allocate driver */
 	g_pAF_CharDrv = cdev_alloc();
 
-	if (NULL == g_pAF_CharDrv) {
+	if (g_pAF_CharDrv == NULL) {
 		unregister_chrdev_region(g_AF_devno, 1);
 
 		LOG_INF("Allocate mem for kobject failed\n");
@@ -250,9 +353,9 @@ static inline int Register_AF_CharDrv(void)
 		return ret;
 	}
 
-	vcm_device = device_create(actuator_class, NULL, g_AF_devno, NULL, AF_DRVNAME);
+	lens_device = device_create(actuator_class, NULL, g_AF_devno, NULL, AF_DRVNAME);
 
-	if (NULL == vcm_device)
+	if (lens_device == NULL)
 		return -EIO;
 
 	LOG_INF("End\n");
@@ -303,6 +406,7 @@ static struct i2c_driver AF_i2c_driver = {
 
 static int AF_i2c_remove(struct i2c_client *client)
 {
+	AFRegulatorCtrl(2);
 	return 0;
 }
 

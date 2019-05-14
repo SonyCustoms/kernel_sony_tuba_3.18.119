@@ -198,49 +198,4 @@ typedef struct {
 	int arg;
 
 } StrobeDrvArg;
-
-
-/* Function declaration to avoid extern usage in .c files, for kernel standardization */
-/* New init functions */
-int strobe_getPartId(int sensorDev, int strobeId);
-MUINT32 strobeInit_dummy(FLASHLIGHT_FUNCTION_STRUCT **pfFunc);
-MUINT32 constantFlashlightInit(FLASHLIGHT_FUNCTION_STRUCT **pfFunc);
-MUINT32 strobeInit_main_sid1_part2(FLASHLIGHT_FUNCTION_STRUCT **pfFunc);
-MUINT32 strobeInit_main_sid2_part1(FLASHLIGHT_FUNCTION_STRUCT **pfFunc);
-MUINT32 strobeInit_main_sid2_part2(FLASHLIGHT_FUNCTION_STRUCT **pfFunc);
-MUINT32 subStrobeInit(FLASHLIGHT_FUNCTION_STRUCT **pfFunc);
-MUINT32 strobeInit_sub_sid1_part2(FLASHLIGHT_FUNCTION_STRUCT **pfFunc);
-MUINT32 strobeInit_sub_sid2_part1(FLASHLIGHT_FUNCTION_STRUCT **pfFunc);
-MUINT32 strobeInit_sub_sid2_part2(FLASHLIGHT_FUNCTION_STRUCT **pfFunc);
-
-/* Old init function */
-MUINT32 dummyFlashlightInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc);
-MUINT32 defaultFlashlightInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc);
-MUINT32 peakFlashlightInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc);
-MUINT32 torchFlashlightInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc);
-MUINT32 constantFlashlightInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc);
-MUINT32 subStrobeInit(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc);
-MUINT32 strobeInit_sub_sid1_part2(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc);
-MUINT32 strobeInit_main_sid1_part2(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc);
-
-/* Tablet version */
-MUINT32 subStrobeInit_2ndPart_2(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc);
-MUINT32 mainStrobeInit_2ndPart_2(PFLASHLIGHT_FUNCTION_STRUCT *pfFunc);
-
-/* Externs from imgsensor*/
-int iWriteRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u16 i2cId);
-int iReadRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u8 *a_pRecvData, u16 a_sizeRecvData, u16 i2cId);
-
-/* Externs from xhci*/
-bool mtk_is_host_mode(void);
-
-/* Boost4Flash */
-int mt6332_OpenBoost4Flash(void);
-int mt6332_CloseBoost4Flash(void);
-
-/* GPIO pinctrl */
-int flashlight_gpio_init(struct platform_device *pdev);
-int flashlight_gpio_set(int pin, int state);
-int flashlight_gpio_hwen_high(void);
-int flashlight_gpio_hwen_low(void);
 #endif
