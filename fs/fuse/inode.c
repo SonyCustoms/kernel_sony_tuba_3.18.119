@@ -5,7 +5,7 @@
   This program can be distributed under the terms of the GNU GPL.
   See the file COPYING.
 */
-
+#define DEBUG 1
 #include "fuse_i.h"
 #include "mt_fuse.h"
 #include <linux/pagemap.h>
@@ -953,7 +953,7 @@ static void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req)
 	arg->flags |= FUSE_ASYNC_READ | FUSE_POSIX_LOCKS | FUSE_ATOMIC_O_TRUNC |
 		FUSE_EXPORT_SUPPORT | FUSE_BIG_WRITES | FUSE_DONT_MASK |
 		FUSE_SPLICE_WRITE | FUSE_SPLICE_MOVE | FUSE_SPLICE_READ |
-		FUSE_FLOCK_LOCKS | FUSE_IOCTL_DIR | FUSE_AUTO_INVAL_DATA |
+		FUSE_FLOCK_LOCKS | FUSE_HAS_IOCTL_DIR | FUSE_AUTO_INVAL_DATA |
 		FUSE_DO_READDIRPLUS | FUSE_READDIRPLUS_AUTO | FUSE_ASYNC_DIO |
 		FUSE_WRITEBACK_CACHE | FUSE_NO_OPEN_SUPPORT;
 	req->in.h.opcode = FUSE_INIT;
@@ -968,7 +968,9 @@ static void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req)
 	req->out.args[0].size = sizeof(struct fuse_init_out);
 	req->out.args[0].value = &req->misc.init_out;
 	req->end = process_init_reply;
+	pr_info("FUSE_INIT: fuse_request_send_background() enter\n");
 	fuse_request_send_background(fc, req);
+	pr_info("FUSE_INIT: fuse_request_send_background() exit\n");
 }
 
 static void fuse_free_conn(struct fuse_conn *fc)
@@ -1028,6 +1030,8 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	struct fuse_req *init_req;
 	int err;
 	int is_bdev = sb->s_bdev != NULL;
+
+	pr_info("FUSE_INIT: fuse_fill_super() enter\n");
 
 	err = -EINVAL;
 	if (sb->s_flags & MS_MANDLOCK)
@@ -1132,7 +1136,9 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 	 */
 	fput(file);
 
+	pr_info("FUSE_INIT: fuse_send_init() enter\n");
 	fuse_send_init(fc, init_req);
+	pr_info("FUSE_INIT: fuse_send_init() exit\n");
 
 	return 0;
 
@@ -1145,6 +1151,7 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
  err_put_conn:
 	fuse_bdi_destroy(fc);
 	fuse_conn_put(fc);
+	sb->s_fs_info = NULL;
  err_fput:
 	fput(file);
  err:
