@@ -139,6 +139,36 @@ static struct snd_pcm_hardware mtk_pcm_hardware = {
 	.fifo_size =        0,
 };
 
+static int speech_mic_mute;
+
+static int Audio_Speech_Mic_Mute_Get(struct snd_kcontrol *kcontrol,
+				     struct snd_ctl_elem_value *ucontrol)
+{
+	ucontrol->value.integer.value[0] = speech_mic_mute;
+	return 0;
+}
+
+static int Audio_Speech_Mic_Mute_Set(struct snd_kcontrol *kcontrol,
+				     struct snd_ctl_elem_value *ucontrol)
+{
+	if (ucontrol->value.integer.value[0] > 1 ||
+	    ucontrol->value.integer.value[0] < 0) {
+		pr_debug("%s() wrong mute value=%ld\n", __func__,
+			 ucontrol->value.integer.value[0]);
+		return -EINVAL;
+	}
+	speech_mic_mute = ucontrol->value.integer.value[0];
+	pr_debug("%s(), speech_mic_mute=%d\n", __func__,
+		 speech_mic_mute);
+	return 0;
+}
+
+static const struct snd_kcontrol_new Audio_snd_speech_controls[] = {
+	SOC_SINGLE_EXT("Speech_MIC_MUTE", SND_SOC_NOPM, 0, 0x1, 0,
+		       Audio_Speech_Mic_Mute_Get, Audio_Speech_Mic_Mute_Set),
+};
+
+
 static int mtk_voice_md2_pcm_open(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
@@ -376,6 +406,8 @@ static int mtk_soc_voice_md2_new(struct snd_soc_pcm_runtime *rtd)
 static int mtk_voice_md2_platform_probe(struct snd_soc_platform *platform)
 {
 	pr_warn("mtk_voice_md2_platform_probe\n");
+	snd_soc_add_platform_controls(platform, Audio_snd_speech_controls,
+				      ARRAY_SIZE(Audio_snd_speech_controls));
 	return 0;
 }
 

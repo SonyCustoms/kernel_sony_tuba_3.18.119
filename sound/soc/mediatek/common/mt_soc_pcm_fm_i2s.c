@@ -119,7 +119,7 @@ static int Audio_Wcn_Cmb_Set(struct snd_kcontrol *kcontrol,
 #if 0/* temp mark for early porting */
 	mAudio_Wcn_Cmb = ucontrol->value.integer.value[0];
 	pr_warn("%s mAudio_Wcn_Cmb = 0x%x\n", __func__, mAudio_Wcn_Cmb);
-	/* mtk_wcn_cmb_stub_audio_ctrl((CMB_STUB_AIF_X)mAudio_Wcn_Cmb);//temp mark for early porting */
+	/* mtk_wcn_cmb_stub_audio_ctrl((enum CMB_STUB_AIF_X)mAudio_Wcn_Cmb);//temp mark for early porting */
 #endif
 	return 0;
 }
@@ -224,7 +224,7 @@ static int mtk_pcm_fm_i2s_close(struct snd_pcm_substream *substream)
 
 	pr_warn("%s rate = %d\n", __func__, runtime->rate);
 
-	/* mtk_wcn_cmb_stub_audio_ctrl((CMB_STUB_AIF_X)CMB_STUB_AIF_0);//temp mark for early porting */
+	/* mtk_wcn_cmb_stub_audio_ctrl((enum CMB_STUB_AIF_X)CMB_STUB_AIF_0);//temp mark for early porting */
 
 	SetFmI2sInPathEnable(false);
 	if (GetFmI2sInPathEnable() == false) {
@@ -259,7 +259,7 @@ static int mtk_pcm_fm_i2s_prepare(struct snd_pcm_substream *substream)
 	pr_warn("%s rate = %d\n", __func__, runtime->rate);
 
 	if (mPrepareDone == false) {
-		/* mtk_wcn_cmb_stub_audio_ctrl((CMB_STUB_AIF_X)CMB_STUB_AIF_3);//temp mark for early porting */
+		/* mtk_wcn_cmb_stub_audio_ctrl((enum CMB_STUB_AIF_X)CMB_STUB_AIF_3);//temp mark for early porting */
 
 		/* interconnection setting */
 		SetFmI2sConnection(Soc_Aud_InterCon_Connection);
