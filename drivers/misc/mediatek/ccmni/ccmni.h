@@ -54,6 +54,7 @@
 #define  SIOCSTXQSTATE          (SIOCDEVPRIVATE + 0)  /* stop/start tx queue */
 #define  SIOCCCMNICFG           (SIOCDEVPRIVATE + 1)  /* configure ccmni/md remapping */
 #define  SIOCFWDFILTER          (SIOCDEVPRIVATE + 2)  /* forward filter for ccmni tx packet */
+#define  CCMNI_TX_PRINT_F       (0x1 << 0)
 #define  CCMNI_FLT_NUM          32
 
 typedef struct ccmni_ctl_block ccmni_ctl_block_t;
@@ -131,15 +132,23 @@ struct ccmni_instance {
 	unsigned int       rx_seq_num;
 	unsigned int       tx_seq_num[2];
 	unsigned int       flags;
-	spinlock_t	       spinlock;
-	ccmni_ctl_block_t  *ctlb;
+	spinlock_t         *spinlock;
+	struct ccmni_ctl_block  *ctlb;
 	unsigned long      tx_busy_cnt[2];
+	unsigned int       rx_gro_cnt;
 	unsigned int       flt_cnt;
-	ccmni_fwd_filter_t flt_tbl[CCMNI_FLT_NUM];
+	struct ccmni_fwd_filter flt_tbl[CCMNI_FLT_NUM];
+#if defined(CCMNI_MET_DEBUG)
+	unsigned long      rx_met_time;
+	unsigned long      tx_met_time;
+	unsigned long      rx_met_bytes;
+	unsigned long      tx_met_bytes;
+#endif
+	struct timespec    flush_time;
 	void               *priv_data;
-} ccmni_instance_t;
+};
 
-typedef struct ccmni_ccci_ops {
+struct ccmni_ccci_ops {
 	int                ccmni_ver;   /* CCMNI_DRV_VER */
 	int                ccmni_num;
 	unsigned char      name[16];	/* "ccmni" or "cc2mni" or "ccemni" */
@@ -149,21 +158,21 @@ typedef struct ccmni_ccci_ops {
 	int (*send_pkt)(int md_id, int ccmni_idx, void *data, int is_ack);
 	int (*napi_poll)(int md_id, int ccmni_idx, struct napi_struct *napi, int weight);
 	int (*get_ccmni_ch)(int md_id, int ccmni_idx, struct ccmni_ch *channel);
-} ccmni_ccci_ops_t;
+};
 
-typedef struct ccmni_ctl_block {
-	ccmni_ccci_ops_t   *ccci_ops;
-	ccmni_instance_t   *ccmni_inst[32];
+struct ccmni_ctl_block {
+	struct ccmni_ccci_ops   *ccci_ops;
+	struct ccmni_instance   *ccmni_inst[32];
 	unsigned int       md_sta;
 	struct wake_lock   ccmni_wakelock;
 	char               wakelock_name[16];
 	unsigned long long net_rx_delay[4];
-} ccmni_ctl_block_t;
+};
 
 struct ccmni_dev_ops {
 	/* must-have */
 	int  skb_alloc_size;
-	int  (*init)(int md_id, ccmni_ccci_ops_t *ccci_info);
+	int  (*init)(int md_id, struct ccmni_ccci_ops *ccci_info);
 	int  (*rx_callback)(int md_id, int ccmni_idx, struct sk_buff *skb, void *priv_data);
 	void (*md_state_callback)(int md_id, int ccmni_idx, MD_STATE state, int is_ack);
 	void (*exit)(int md_id);

@@ -124,3 +124,6 @@ endif
 ifeq ($(CONFIG_MTK_DITHERING_SUPPORT), y)
 ccflags-y += -DDITHERING_SUPPORT
 endif
+ifeq (y, $(filter y, $(CONFIG_ARCH_MT6755)))
+obj-y += layering_rule_base/v1/
+endif

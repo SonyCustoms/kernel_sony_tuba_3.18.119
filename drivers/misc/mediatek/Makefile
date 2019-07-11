@@ -33,6 +33,7 @@ obj-$(CONFIG_MTK_GIC_EXT) += ext_gic/
 obj-$(CONFIG_MTK_ICE_DEBUG) +=ice_debug/
 obj-y += cci_hw_id/
 obj-y += nfc/
+obj-$(CONFIG_NFC_CHIP_SUPPORT) += nfc/
 
 obj-$(CONFIG_MMPROFILE) += mmp/
 obj-$(CONFIG_MTK_AUXADC)	+= auxadc/
@@ -49,7 +50,6 @@ endif
 obj-$(CONFIG_MTK_LEDS)	+= leds/
 obj-$(CONFIG_CUSTOM_KERNEL_CHARGEPUMP) += chargepump/
 obj-$(CONFIG_MTK_VIBRATOR)	+= vibrator/
-#obj-$(CONFIG_MTK_SM100)	+= tc1_interface/vib_drv/
 obj-$(CONFIG_MTK_ACCDET)	+= accdet/
 obj-$(CONFIG_MTK_ECCCI_C2K) += c2k_usb/
 obj-y += irtx/
@@ -61,12 +61,10 @@ obj-$(CONFIG_MTK_PMIC)	+= power/
 obj-$(CONFIG_MTK_PMIC_NEW_ARCH)	+= pmic/
 obj-$(CONFIG_MTK_PMIC_WRAP) += pmic_wrap/
 obj-$(CONFIG_USB_MTK_HDRC) += usb20/
-obj-$(CONFIG_MTK_USBFSH) += usb11/
 obj-$(CONFIG_MU3_PHY)	+= mu3phy/
 obj-$(CONFIG_USB_MU3D_DRV)	+= mu3d/
 obj-$(CONFIG_SSUSB_DRV) += ssusb/
 obj-$(CONFIG_USB_XHCI_MTK)	+= xhci/
-obj-$(CONFIG_USB_C_SWITCH)	+= usb_c/
 obj-$(CONFIG_MTK_GPIO) += gpio/
 obj-$(CONFIG_SECURITY_SELINUX)	+= selinux_warning/
 obj-$(CONFIG_MTK_MEM) += mem/
@@ -80,7 +78,6 @@ obj-$(CONFIG_MTK_DEVINFO_DRIVER) += devinfo/
 obj-$(CONFIG_MTK_DEVINFO_DRIVER_V2) += devinfo/
 obj-$(CONFIG_MTK_LCM) += lcm/
 obj-$(CONFIG_MTK_LCM) += ext_disp/
-obj-$(CONFIG_MTK_HDMI_SUPPORT) += hdmi/
 obj-$(CONFIG_MTK_FB) += video/
 obj-$(CONFIG_MTK_GPU_SUPPORT) += gpu/
 obj-$(CONFIG_MTK_SMI_EXT)	+= smi/
@@ -96,8 +93,8 @@ obj-y+= imgsensor/src/
 endif
 obj-$(CONFIG_MTK_LENS)   += lens/
 obj-$(CONFIG_MTK_FLASHLIGHT)	+= flashlight/src/
-ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/met/),)
-obj-$(CONFIG_MTK_MET) += met/
+ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/met_drv/),)
+obj-y += met_drv/
 endif
 obj-$(CONFIG_MTK_CCCI_DEVICES)	+=  ccci_util/
 obj-$(CONFIG_MTK_NET_CCMNI) +=  ccmni/
@@ -129,19 +126,11 @@ obj-$(CONFIG_MTK_WATCHPOINT) += watchpoint/
 obj-$(CONFIG_MTK_SYSTRACKER)   += systracker/
 obj-$(CONFIG_MTK_RAM_CONSOLE)	+= ram_console/
 obj-$(CONFIG_MTK_DRAM_LOG_STORE)	+= log_store/
-obj-$(CONFIG_MTK_EXTMEM) += exm/
+obj-$(CONFIG_MTK_USE_RESERVED_EXT_MEM) += exm/
 obj-$(CONFIG_RT_REGMAP) += rt-regmap/
-obj-$(CONFIG_TCPC_CLASS) += pd/
-
 obj-$(CONFIG_MTK_SVP) += memory-ssvp/
 obj-$(CONFIG_ZONE_MOVABLE_CMA) += zone_movable_cma/
-
 obj-y += performance/
-
-# gator driver is platform-independent
-ifneq ($(wildcard $(srctree)/$(src)/gator-driver/),)
-obj-$(CONFIG_GATOR_DRIVER) += gator-driver/
-endif # gator-driver folder exist
 
 obj-$(CONFIG_MTK_IN_HOUSE_TEE_SUPPORT) += trustzone/
 ifeq ($(CONFIG_HAVE_MTK_IN_HOUSE_TEE_SUPPORT),y)

@@ -4594,7 +4594,7 @@ static int fb_early_init_dt_get_chosen(unsigned long node, const char *uname, in
 //CEI comment start//
 extern int get_car_tune_value_rtc(void);
 //CEI comment end/
-static int pmic_mt_probe(struct platform_device *dev)
+static int __init pmic_mt_probe(struct platform_device *dev)
 {
 	int ret_device_file = 0, i;
 #ifdef DLPT_FEATURE_SUPPORT

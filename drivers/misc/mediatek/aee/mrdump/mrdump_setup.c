@@ -63,7 +63,7 @@ static void mrdump_reboot(void)
 #ifdef CONFIG_SONY_S1_SUPPORT
     write_magic(S1_WARMBOOT_MAGIC_VAL | (S1_WARMBOOT_NORMAL << 16), 0);
 #endif
-		wd_api->wd_sw_reset(0);
+		wd_api->wd_sw_reset(1);
 	}
 }
 

@@ -20,12 +20,15 @@ ccflags-y += -DMTK_ALPS_BOX_SUPPORT
 endif
 
 #QMU Flags
-ccflags-$(CONFIG_MTK_MUSB_QMU_SUPPORT) += -DMUSB_QMU_SUPPORT
-ccflags-$(CONFIG_MTK_MUSB_QMU_SUPPORT) += -DMUSB_QMU_SUPPORT_HOST
+subdir-ccflags-$(CONFIG_MTK_MUSB_QMU_SUPPORT) += -DMUSB_QMU_SUPPORT
+subdir-ccflags-$(CONFIG_MTK_MUSB_QMU_SUPPORT) += -DMUSB_QMU_SUPPORT_HOST
 ##ccflags-$(CONFIG_MTK_MUSB_QMU_SUPPORT) += -DQMU_TASKLET
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
-
+ifeq ($(CONFIG_MTK_MUSB_QMU_SUPPORT),y)
+subdir-ccflags-$(CONFIG_ARCH_MT8163) += -DMUSB_QMU_LIMIT_SUPPORT -DMUSB_QMU_LIMIT_RXQ_NUM=4 -DMUSB_QMU_LIMIT_TXQ_NUM=4
+endif
+ 
 #Platform
 obj-$(CONFIG_ARCH_MT2601) += $(subst ",,$(CONFIG_MTK_PLATFORM))/
 obj-$(CONFIG_ARCH_MT6795) += $(subst ",,$(CONFIG_MTK_PLATFORM))/

@@ -402,11 +402,8 @@ static signed int fgauge_read_current(void *data)
 	kal_bool temp_is_charging = 0;
 //CEI comment end//
 
-#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
-#else
 	unsigned int ret = 0;
-#endif
-
+    fgadc_hal_lock();
 	/* HW Init
 	 * (1)    i2c_write (0x60, 0xC8, 0x01); // Enable VA2
 	 * (2)    i2c_write (0x61, 0x15, 0x00); // Enable FGADC clock for digital
@@ -1450,6 +1447,8 @@ signed int bm_ctrl_cmd(BATTERY_METER_CTRL_CMD cmd, void *data)
 //CEI comments start//
 		bm_func[BATTERY_METER_CMD_GET_ADC_V_BAT_ID] = read_adc_v_bat_id;
 //CEI comments end//
+        bm_func[BATTERY_METER_CMD_SET_META_CALI_CURRENT] = fgauge_set_meta_cali_current;
+		bm_func[BATTERY_METER_CMD_META_CALI_CAR_TUNE_VALUE] = fgauge_meta_cali_car_tune_value;
 	}
 
 	if (cmd < BATTERY_METER_CMD_NUMBER) {

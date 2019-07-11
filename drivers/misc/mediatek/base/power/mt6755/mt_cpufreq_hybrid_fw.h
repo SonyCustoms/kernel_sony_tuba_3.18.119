@@ -357,7 +357,7 @@ static const u32 dvfs_binary[] = {
 	0xe0c00001, 0xf0000000, 0x17c07c1f
 };
 static struct pcm_desc dvfs_pcm = {
-	.version	= "pcm_dvfs_v0.1_160210_02",
+	.version	= "pcm_dvfs_v0.1_170802_01",
 	.base		= dvfs_binary,
 	.size		= 1905,
 	.sess		= 2,
@@ -683,7 +683,7 @@ static const u32 dvfs_binary[] = {
 	0xa0402c01, 0xe0c00001, 0xf0000000, 0x17c07c1f
 };
 static struct pcm_desc dvfs_pcm = {
-	.version	= "pcm_dvfs_v0.1_150806_09",
+	.version	= "pcm_dvfs_v0.1_150806_10",
 	.base		= dvfs_binary,
 	.size		= 1888,
 	.sess		= 2,

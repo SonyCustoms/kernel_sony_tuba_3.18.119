@@ -63,12 +63,10 @@ endif
 endif
 # ---------------------- #
 
-$(info $$CONFIG_MTK_GPU_COMMON_DVFS_SUPPORT is [${CONFIG_MTK_GPU_COMMON_DVFS_SUPPORT}])
-    
+   
 ifeq ($(CONFIG_MTK_GPU_COMMON_DVFS_SUPPORT),y)
-ccflags-y += -DGED_DVFS_ENABLE \
-             -DENABLE_COMMON_DVFS \
-	     -DENABLE_TIMER_BACKUP 
+ccflags-y += -DENABLE_COMMON_DVFS \
+	     -DENABLE_TIMER_BACKUP
 endif
 
 ccflags-y += -DGED_SYSTRACE_UTIL

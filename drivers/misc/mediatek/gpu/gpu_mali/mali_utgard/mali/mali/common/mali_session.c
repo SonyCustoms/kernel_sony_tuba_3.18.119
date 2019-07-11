@@ -19,10 +19,6 @@
 #include "mtk_gpu_meminfo.h"
 extern int g_mtk_gpu_total_memory_usage_in_pages_debugfs;
 #endif
-#ifdef ENABLE_MTK_MEMINFO
-#include "mtk_gpu_meminfo.h"
-extern int g_mtk_gpu_total_memory_usage_in_pages_debugfs;
-#endif
 
 _MALI_OSK_LIST_HEAD(mali_sessions);
 static u32 mali_session_count = 0;

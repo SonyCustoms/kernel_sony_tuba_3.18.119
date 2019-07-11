@@ -1154,6 +1154,9 @@ long port_proxy_user_ioctl(struct port_proxy *proxy_p, int ch, unsigned int cmd,
 	char magic_pattern[64];
 #endif
 
+    static atomic_t last_md1_type;
+	static atomic_t last_md3_type;
+
 	switch (cmd) {
 	case CCCI_IOC_GET_MD_PROTOCOL_TYPE:
 		CCCI_ERROR_LOG(md_id, CHAR, "Call CCCI_IOC_GET_MD_PROTOCOL_TYPE!\n");
@@ -1426,13 +1429,20 @@ long port_proxy_user_ioctl(struct port_proxy *proxy_p, int ch, unsigned int cmd,
 		}
 		break;
 	case CCCI_IOC_GET_MD_TYPE:
-		retry = 600;
+		retry = 10;
 		do {
 			md_type = get_legacy_md_type(md_id);
-			if (md_type)
+			if (md_type) {
+				if (md_id == 1)
+					atomic_set(&last_md1_type, md_type);
+				else
+					atomic_set(&last_md3_type, md_type);
 				break;
+			}
 			msleep(500);
 			retry--;
+			if (md_type == 0 && retry == 0)
+				md_type = md_id == 1 ? atomic_read(&last_md1_type) : atomic_read(&last_md3_type);
 		} while (retry);
 		CCCI_NORMAL_LOG(md_id, CHAR, "CCCI_IOC_GET_MD_TYPE: %d!\n", md_type);
 		ccci_event_log("md%d: CCCI_IOC_GET_MD_TYPE: 0x%x\n", md_id, md_type);

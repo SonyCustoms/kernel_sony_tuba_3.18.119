@@ -75,16 +75,12 @@ static struct i2c_board_info kd_lens_dev __initdata = {
 #endif
 
 
-static stAF_DrvList g_stAF_DrvList[MAX_NUM_OF_LENS] = {
-#ifdef CONFIG_MTK_LENS_DW9714AF_SUPPORT
+static struct stAF_DrvList g_stAF_DrvList[MAX_NUM_OF_LENS] = {
 	{1, AFDRV_DW9714AF, DW9714AF_SetI2Cclient, DW9714AF_Ioctl, DW9714AF_Release},
-#endif
-#ifdef CONFIG_MTK_LENS_BU64245GWZAF_SUPPORT
 	{1, AFDRV_BU64245GWZAF, BU64245GWZAF_SetI2Cclient, BU64245GWZAF_Ioctl, BU64245GWZAF_Release},
-#endif
 };
 
-static stAF_DrvList *g_pstAF_CurDrv;
+static struct stAF_DrvList *g_pstAF_CurDrv;
 
 static spinlock_t g_AF_SpinLock;
 
@@ -95,16 +91,22 @@ static struct i2c_client *g_pstAF_I2Cclient;
 static dev_t g_AF_devno;
 static struct cdev *g_pAF_CharDrv;
 static struct class *actuator_class;
+static struct device *lens_device;
 
+/* PMIC */
+#if !defined(CONFIG_MTK_LEGACY)
+static struct regulator *regVCAMAF;
+static int g_regVCAMAFEn;
+#endif
 extern void DW9714AF_WriteReg_Pwdn(struct i2c_client *client, u16 a_u2Data);
 
-static long AF_SetMotorName(__user stAF_MotorName *pstMotorName)
+static long AF_SetMotorName(__user struct stAF_MotorName *pstMotorName)
 {
 	long i4RetValue = -1;
 	int i;
-	stAF_MotorName stMotorName;
+	struct stAF_MotorName stMotorName;
 
-	if (copy_from_user(&stMotorName , pstMotorName, sizeof(stAF_MotorName)))
+	if (copy_from_user(&stMotorName, pstMotorName, sizeof(struct stAF_MotorName)))
 		LOG_INF("copy to user failed when getting motor information\n");
 
 	LOG_INF("Set Motor Name : %s\n", stMotorName.uMotorName);
@@ -431,7 +433,12 @@ static int AF_i2c_probe(struct i2c_client *client, const struct i2c_device_id *i
 	}
 
 	spin_lock_init(&g_AF_SpinLock);
+    regVCAMAF = NULL;
+	g_regVCAMAFEn = 0;
 
+#if 0 /* ndef CONFIG_MTK_LEGACY */
+	AFRegulatorCtrl(0);
+#endif
 	if (TRUE != _hwPowerOn(AFVDD, Vol_2800))
 		printk(" Fail to enable AFVDD power\n");
 	else

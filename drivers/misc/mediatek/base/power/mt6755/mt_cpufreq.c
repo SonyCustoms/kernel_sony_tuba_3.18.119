@@ -384,7 +384,7 @@ static unsigned int _mt_cpufreq_get_cpu_level(void)
 
 #if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
 	return CPU_LEVEL_0;
-#endif
+#else
 
 	/* get CPU clock-frequency from DT */
 #ifdef CONFIG_OF
@@ -411,7 +411,7 @@ static unsigned int _mt_cpufreq_get_cpu_level(void)
 			else if ((2 == func_code_0) || (4 == func_code_0))
 				return CPU_LEVEL_1;
 #ifdef CONFIG_ARCH_MT6755_TURBO
-			else if (0x22 == func_code_0)
+			else if (0x20 == (func_code_0 & 0xF0))
 				return CPU_LEVEL_2;
 #endif
 			else {

@@ -6311,28 +6311,6 @@ static int32_t cmdq_core_handle_wait_task_result_secure_impl(TaskStruct *pTask,
 		/*     .dump secure HW thread */
 		/*     .reset CMDQ secure HW thread */
 		cmdq_sec_cancel_error_task_unlocked(pTask, thread, &result);
-
-		/* dump shared cookie */
-		CMDQ_ERR
-			("WAIT: [2]pTask:%p thread:%d cookie(%d, %d, %d) waitCookie:%d raisedIRQ:%#x\n",
-			pTask, thread,
-			cmdq_core_get_secure_thread_exec_counter(12),
-			cmdq_core_get_secure_thread_exec_counter(13),
-			cmdq_core_get_secure_thread_exec_counter(14),
-			gCmdqContext.thread[thread].waitCookie,
-			cmdq_core_get_secure_IRQ_status());
-
-		spin_lock_irqsave(&gCmdqExecLock, flags);
-
-		/* confirm pending IRQ first */
-		cmdq_core_handle_secure_thread_done_impl(thread, 0x01, &pTask->wakedUp);
-
-		spin_unlock_irqrestore(&gCmdqExecLock, flags);
-
-		/* check if this task has finished after handling pending IRQ */
-		if (TASK_STATE_DONE == pTask->taskState)
-			break;
-
 		status = -ETIMEDOUT;
 		throwAEE = true;
 		/* shall we pass the error instru back from secure path?? */
@@ -6345,8 +6323,6 @@ static int32_t cmdq_core_handle_wait_task_result_secure_impl(TaskStruct *pTask,
 		/* module reset */
 		/* TODO: get needReset infor by secure thread PC */
 		cmdq_core_reset_hw_engine(pTask->engineFlag);
-
-		spin_lock_irqsave(&gCmdqExecLock, flags);
 
 		spin_lock_irqsave(&gCmdqExecLock, flags);
 

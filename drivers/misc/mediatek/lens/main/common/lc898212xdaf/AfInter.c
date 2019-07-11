@@ -12,7 +12,7 @@
 #include	<linux/i2c.h>
 #include	<linux/delay.h>
 #include	"AfInter.h"
-
+#include	"AfSTMV.h"
 #define		DeviceAddr		0xE4	/* Device address of driver IC */
 
 

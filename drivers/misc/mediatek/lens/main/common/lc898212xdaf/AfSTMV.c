@@ -21,7 +21,7 @@
 /* ************************** */
 #define	LC898212_fs	234375
 #define AF_DRVNAME "LC898212XDAF_DRV"
-
+#define	ABS_STMV(x)	((x) < 0 ? -(x) : (x))
 #define AF_DEBUG 1
 #ifdef AF_DEBUG
 #define LOG_INF(format, args...) pr_debug(AF_DRVNAME " [%s] " format, __func__, ##args)
@@ -43,6 +43,7 @@
 // Explanation		: Stepmove Function
 // History			: First edition 						2015.02.10 YS.Kim
 //********************************************************************************
+static struct stSmvPar StSmvPar;
 unsigned char Stmv212(short SsSmvEnd)
 {
 	unsigned char	UcStmOpe;
